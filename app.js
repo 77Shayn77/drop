@@ -30,7 +30,11 @@ const chat = [
 ];
 
 // ----- Состояние: то, что меняется, пока вы пользуетесь сайтом -----
-const state = { view: "feed", nowId: 1, playing: false, pos: 0, liked: { 3: true } };
+const state = {
+  view: "feed", nowId: 1, playing: false, pos: 0, liked: { 3: true },
+  // Вход в аккаунт: кто вошёл, его профиль и состояние формы
+  auth: { user: null, profile: null, mode: "login", error: "", notice: "", busy: false, form: {} },
+};
 
 const NAV = [
   { id: "feed",    label: "Лента",   d: "M3 11l9-8 9 8M5 10v10h14V10" },
@@ -116,17 +120,56 @@ const VIEWS = {
       </form>
     </div>`,
 
-  profile: () => {
-    const u = USERS.me;
-    return `
-      <div class="card row" style="gap:24px;align-items:flex-start">
-        <div class="avatar" style="width:112px;height:112px;font-size:44px;background:${u.color}">${u.init}</div>
-        <div><h1 class="h1" style="font-size:26px">${u.name}</h1><div class="muted">@${u.handle}</div>
-        <p>Пишу ambient и lo-fi по ночам. Рад новым людям и коллабам.</p></div>
-      </div>
-      ${tracks.filter((t) => t.by === "me").map(trackCard).join("")}`;
-  },
+  profile: () => (state.auth.user ? myProfile() : authCard()),
 };
+
+// ----- Вход, регистрация, свой профиль -----
+function field(name, label, type, autocomplete, value = "") {
+  return `<label class="field"><span>${label}</span><input name="${name}" type="${type}" autocomplete="${autocomplete}" value="${esc(value)}" required></label>`;
+}
+
+function authCard() {
+  const a = state.auth, reg = a.mode === "register", f = a.form;
+  return `
+    <div class="card" style="max-width:460px">
+      <h1 class="h1" style="font-size:26px">${reg ? "Регистрация" : "Вход"}</h1>
+      <p class="muted">${reg ? "Создайте аккаунт, чтобы выкладывать треки и писать в чатах." : "Войдите в свой аккаунт."}</p>
+      <form id="authForm" class="form">
+        ${reg ? field("username", "Ник (латиницей)", "text", "username", f.username) + field("name", "Имя", "text", "name", f.name) : ""}
+        ${field("email", "Почта", "email", "email", f.email)}
+        ${field("password", "Пароль (от 6 символов)", "password", reg ? "new-password" : "current-password")}
+        ${a.error ? `<div class="alert" role="alert">${esc(a.error)}</div>` : ""}
+        ${a.notice ? `<div class="notice">${esc(a.notice)}</div>` : ""}
+        <button class="btn-a" ${a.busy ? "disabled" : ""}>${a.busy ? "Подождите…" : reg ? "Создать аккаунт" : "Войти"}</button>
+      </form>
+      <button class="link" data-authmode="${reg ? "login" : "register"}">${reg ? "У меня уже есть аккаунт" : "Нет аккаунта? Зарегистрироваться"}</button>
+    </div>`;
+}
+
+function myProfile() {
+  const { user, profile } = state.auth;
+  const p = profile || { username: "?", display_name: "", bio: "" };
+  const name = p.display_name || p.username;
+  return `
+    <div class="card row" style="gap:24px;align-items:flex-start">
+      <div class="avatar" style="width:96px;height:96px;font-size:38px;background:#7c8cff">${esc(name.charAt(0).toUpperCase())}</div>
+      <div style="min-width:0">
+        <h1 class="h1" style="font-size:26px">${esc(name)}</h1>
+        <div class="muted">@${esc(p.username)} · ${esc(user.email)}</div>
+        <p>${esc(p.bio || "Расскажите о себе ниже.")}</p>
+      </div>
+    </div>
+    <form id="profileForm" class="card form" style="max-width:460px">
+      <strong>Редактировать профиль</strong>
+      <label class="field"><span>Имя</span><input name="display_name" value="${esc(p.display_name || "")}" maxlength="40"></label>
+      <label class="field"><span>О себе</span><textarea name="bio" maxlength="200">${esc(p.bio || "")}</textarea></label>
+      ${state.auth.error ? `<div class="alert" role="alert">${esc(state.auth.error)}</div>` : ""}
+      ${state.auth.notice ? `<div class="notice">${esc(state.auth.notice)}</div>` : ""}
+      <button class="btn-a" ${state.auth.busy ? "disabled" : ""}>Сохранить</button>
+    </form>
+    <div><button class="btn-s" data-logout="1">Выйти из аккаунта</button></div>
+    <div class="empty muted">Загрузка своих треков появится на следующем этапе.</div>`;
+}
 
 // ----- Рисуем страницу -----
 function renderNav() {
@@ -167,6 +210,34 @@ document.addEventListener("click", (e) => {
     render();
   }
   if (btn.dataset.like) { const id = btn.dataset.like; state.liked[id] = !state.liked[id]; render(); }
+  if (btn.dataset.authmode) { Object.assign(state.auth, { mode: btn.dataset.authmode, error: "", notice: "" }); render(); }
+  if (btn.dataset.logout) {
+    Auth.signOut().then(() => { Object.assign(state.auth, { user: null, profile: null, mode: "login", error: "", notice: "" }); render(); });
+  }
+});
+
+// Отправка форм входа / регистрации / профиля
+document.addEventListener("submit", async (e) => {
+  const id = e.target.id;
+  if (id !== "authForm" && id !== "profileForm") return;
+  e.preventDefault();
+  const a = state.auth;
+  const f = Object.fromEntries(new FormData(e.target));
+  a.error = ""; a.notice = ""; a.busy = true;
+  if (id === "authForm") a.form = { email: f.email, username: f.username, name: f.name }; // пароль не храним
+  render();
+
+  let res;
+  if (id === "profileForm") res = await Auth.saveProfile(a.user.id, { display_name: f.display_name.trim(), bio: f.bio.trim() });
+  else if (a.mode === "register") res = await Auth.signUp(f);
+  else res = await Auth.signIn(f);
+
+  a.busy = false;
+  if (res.error) a.error = res.error;
+  if (res.notice) a.notice = res.notice;
+  if (res.user) { a.user = res.user; a.profile = res.profile; a.form = {}; }
+  if (id === "profileForm" && res.profile) { a.profile = res.profile; a.notice = "Сохранено."; }
+  render();
 });
 
 document.addEventListener("submit", (e) => {
@@ -187,7 +258,7 @@ setInterval(() => {
   state.pos += 1;
   if (state.pos >= t.dur) { state.pos = 0; state.playing = false; }
   // В чате перерисовываем только плеер, чтобы не стирать набираемое сообщение
-  if (state.view === "chats") renderPlayer(); else render();
+  if (state.view === "chats" || state.view === "profile") renderPlayer(); else render();
 }, 1000);
 
 // ----- Тема: светлая / тёмная -----
@@ -205,3 +276,10 @@ let saved = "dark";
 try { saved = localStorage.getItem("theme") || "dark"; } catch (e) {}
 setTheme(saved);
 render();
+
+// Проверяем, входил ли человек раньше (Supabase помнит вход в браузере)
+Auth.init(({ user, profile }) => {
+  state.auth.user = user;
+  state.auth.profile = profile;
+  render();
+});
