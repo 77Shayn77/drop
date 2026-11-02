@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Дроп</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Unbounded:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell">
+    <nav class="side" aria-label="Основная навигация">
+      <div class="logo" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-6 4-6 6 0s4 6 6 0 4-6 6 0"/></svg>
+      </div>
+      <div class="brand" data-app-name>Дроп</div>
+      <div class="nav" id="nav"></div>
+      <button class="theme" id="theme" aria-label="Сменить тему"></button>
+    </nav>
+
+    <main class="main" id="view"></main>
+  </div>
+
+  <div class="player" id="player" aria-label="Плеер"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
