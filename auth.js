@@ -77,5 +77,5 @@ const Auth = (() => {
     return { profile: data };
   }
 
-  return { init, signUp, signIn, signOut, saveProfile };
+  return { init, signUp, signIn, signOut, saveProfile, client };
 })();
