@@ -8,9 +8,9 @@ const DB = (() => {
   function say(error) {
     if (!error) return "";
     console.error(error);
-    if (error.code === "42P01" || error.code === "PGRST205" || /does not exist|schema cache/i.test(error.message || ""))
+    if (["42P01", "42703", "PGRST205", "PGRST204", "PGRST200", "PGRST100"].includes(error.code) || /does not exist|schema cache|relationship|column/i.test(error.message || ""))
       return "setup";
-    return "Не получилось. Проверьте интернет и попробуйте ещё раз.";
+    return "Не получилось (" + (error.code || "") + " " + String(error.message || "").slice(0, 90) + ")";
   }
 
   async function moments() {
