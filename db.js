@@ -17,14 +17,14 @@ const DB = (() => {
     if (!c) return { data: [], error: "Нет связи с сервером." };
     const { data, error } = await c
       .from("moments")
-      .select("id,user_id,track_id,start_sec,caption,created_at,profiles(username,display_name),reactions(emoji,user_id)")
+      .select("id,user_id,track_id,start_sec,caption,photo_url,created_at,profiles(username,display_name,avatar_url,accent),reactions(emoji,user_id)")
       .order("created_at", { ascending: false })
       .limit(40);
     return { data: data || [], error: say(error) };
   }
 
-  async function postMoment(track_id, start_sec, caption) {
-    const { error } = await c.from("moments").insert({ track_id, start_sec, caption: (caption || "").slice(0, 140) });
+  async function postMoment(track_id, start_sec, caption, photo_url) {
+    const { error } = await c.from("moments").insert({ track_id: track_id || null, start_sec: track_id ? start_sec : null, caption: (caption || "").slice(0, 300), photo_url: photo_url || null });
     return say(error);
   }
 
@@ -47,7 +47,7 @@ const DB = (() => {
     if (!clean) return [];
     const { data } = await c
       .from("profiles")
-      .select("id,username,display_name")
+      .select("id,username,display_name,avatar_url,now_track,now_at")
       .or(`username.ilike.%${clean}%,display_name.ilike.%${clean}%`)
       .neq("id", meId)
       .limit(8);
@@ -69,7 +69,7 @@ const DB = (() => {
     }
     const ids = [...last.keys()];
     let profs = [];
-    if (ids.length) profs = (await c.from("profiles").select("id,username,display_name").in("id", ids)).data || [];
+    if (ids.length) profs = (await c.from("profiles").select("id,username,display_name,avatar_url,now_track,now_at").in("id", ids)).data || [];
     const list = profs.map((p) => ({ ...p, last: last.get(p.id) }));
     list.sort((a, b) => (a.last.created_at < b.last.created_at ? 1 : -1));
     return { list, error: "" };
@@ -107,9 +107,24 @@ const DB = (() => {
   }
 
   async function profile(id) {
-    const { data } = await c.from("profiles").select("id,username,display_name").eq("id", id).maybeSingle();
+    const { data } = await c.from("profiles").select("*").eq("id", id).maybeSingle();
     return data;
   }
 
-  return { moments, postMoment, deleteMoment, setReaction, search, peers, thread, send, subscribe, unsubscribe, profile };
+  async function userPosts(uid) {
+    const { data, error } = await c
+      .from("moments")
+      .select("id,user_id,track_id,start_sec,caption,photo_url,created_at,profiles(username,display_name,avatar_url,accent),reactions(emoji,user_id)")
+      .eq("user_id", uid).order("created_at", { ascending: false }).limit(30);
+    return { data: data || [], error: say(error) };
+  }
+
+  let lastNow = 0;
+  function setNow(trackId, uid) {
+    if (!c || !uid || Date.now() - lastNow < 20000) return;
+    lastNow = Date.now();
+    c.from("profiles").update({ now_track: trackId, now_at: new Date().toISOString() }).eq("id", uid).then(() => {});
+  }
+
+  return { moments, postMoment, deleteMoment, setReaction, search, peers, thread, send, subscribe, unsubscribe, profile, userPosts, setNow, say, client: c };
 })();

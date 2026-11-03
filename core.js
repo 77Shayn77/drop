@@ -12,7 +12,10 @@ const P = (d, extra = "") => `<svg width="22" height="22" viewBox="0 0 24 24" fi
 const ICON = {
   play: `<svg class="i-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>`,
   pause: `<svg class="i-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.2" height="14" rx="1.4"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.4"/></svg>`,
-  moments: P(`<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>`),
+  moments: P(`<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="1.8"/><path d="M21 15l-5-5L5 21"/>`),
+  rooms: P(`<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-4 3-5.5 6.5-5.5s5.9 1.5 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.8.6 2.7 2.2 3 5.2"/>`),
+  plus: P(`<path d="M12 5v14M5 12h14"/>`),
+  camera: P(`<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>`),
   tracks: P(`<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>`),
   chats: P(`<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>`),
   me: P(`<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4-6 8-6s7 1.5 8 6"/>`),
@@ -28,6 +31,7 @@ const ICON = {
 
 const AV_COLORS = ["#7c5cff", "#ff5ca8", "#19d3a2", "#ffb84d", "#2a6bff", "#ff6b4a", "#c6f432"];
 function avatar(p, size = 44) {
+  if (p && p.avatar_url) return `<img class="avatar" src="${esc(p.avatar_url)}" alt="" style="width:${size}px;height:${size}px;object-fit:cover">`;
   const name = (p && (p.display_name || p.username)) || "?";
   let h = 0;
   for (const ch of (p && p.username) || name) h = (h * 31 + ch.charCodeAt(0)) % 997;
@@ -71,6 +75,7 @@ function startPlayback(id, from, to, key) {
   } else if (au.readyState > 0) go();
   else au.addEventListener("loadedmetadata", go, { once: true });
   sync(true);
+  if (typeof DB !== "undefined") DB.setNow(id, me());
 }
 
 function playTrack(id) {

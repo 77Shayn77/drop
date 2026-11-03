@@ -1,7 +1,7 @@
 // ============================================================
 // Главный файл: показывает экраны и реагирует на нажатия.
 // ============================================================
-const VIEW = { moments: viewMoments, tracks: viewTracks, chats: viewChats, me: viewMe };
+const VIEW = { moments: viewMoments, tracks: viewTracks, chats: viewChats, rooms: viewRooms, profile: viewProfile, me: viewMe };
 const unreadTotal = () => Object.values(S.unread).reduce((a, b) => a + b, 0);
 let onInputTimer = null;
 
@@ -19,6 +19,7 @@ function go(v) {
   S.view = v; S.auth.error = ""; S.auth.notice = "";
   if (v === "moments") loadMoments();
   if (v === "chats" && S.auth.user) loadPeers();
+  if (v === "rooms" && S.auth.user) loadRooms();
   render();
 }
 
@@ -53,8 +54,9 @@ function openSheet(id) {
 function onAuth({ user, profile }) {
   S.auth.user = user; S.auth.profile = profile;
   if (user) DB.subscribe(user.id, onIncoming);
-  else { DB.unsubscribe(); S.chat = { peer: null, msgs: [], peers: [], found: [], q: "", err: "", loading: false }; S.unread = {}; }
+  else { DB.unsubscribe(); S.chat = { peer: null, msgs: [], peers: [], found: [], q: "", err: "", loading: false }; S.unread = {}; RoomsDB.unwatch(); S.rooms = freshRooms(); }
   if (user && S.view === "chats") loadPeers();
+  if (user && S.view === "rooms") loadRooms();
   render(true);
 }
 
@@ -92,18 +94,10 @@ document.addEventListener("click", async (e) => {
   if (d.sheet) return openSheet(S.nowId);
   if (d.sheetclose) { S.sheet = false; return renderSheet(); }
   if (d.previewmoment) return playMoment(S.nowId, S.mstart);
-  if (d.postmoment) {
-    if (!S.auth.user) { toast("Сначала войдите"); S.sheet = false; renderSheet(); return go("me"); }
-    el.disabled = true;
-    const err = await DB.postMoment(S.nowId, S.mstart, ($("#mcap") || {}).value);
-    el.disabled = false;
-    if (err) return toast(err === "setup" ? "Нужен SQL из шага 4" : err);
-    toast("Момент опубликован ⚡");
-    S.sheet = false; renderSheet(); S.moments = null; return go("moments");
-  }
+  if (d.postmoment) return openComposer(S.nowId, S.mstart);
   if (d.react) {
     if (!S.auth.user) { toast("Войдите, чтобы реагировать"); return go("me"); }
-    const [id, emoji] = d.react.split(":"), m = (S.moments || []).find((x) => String(x.id) === id);
+    const [id, emoji] = d.react.split(":"), m = [...(S.moments || []), ...((S.prof && S.prof.posts) || [])].find((x) => String(x.id) === id);
     if (!m) return;
     const had = m.reactions.find((r) => r.user_id === me());
     m.reactions = m.reactions.filter((r) => r.user_id !== me());
@@ -166,9 +160,9 @@ document.addEventListener("submit", async (e) => {
   }
   if (f.id === "profileForm") {
     S.auth.busy = true; render(true);
-    const r = await Auth.saveProfile(me(), { display_name: v.display_name.trim(), bio: v.bio.trim() });
+    const r = await Auth.saveProfile(me(), { display_name: v.display_name.trim(), bio: v.bio.trim(), profile_track: v.profile_track || null });
     S.auth.busy = false;
-    if (r.error) S.auth.error = r.error; else { S.auth.profile = r.profile; S.auth.notice = "Сохранено"; S.auth.error = ""; }
+    if (r.error) S.auth.error = r.error === "setup" ? "Нужен SQL из шага 5" : r.error; else { S.auth.profile = r.profile; S.auth.notice = "Сохранено"; S.auth.error = ""; }
     return render(true);
   }
   if (f.id === "compose") {

@@ -23,3 +23,19 @@ function waveHeights(id, n) {
     return Math.round(22 + 78 * v);
   });
 }
+
+// ---------- Оформление профиля ----------
+const BANNERS = [
+  ["#7c5cff", "#ff5ca8"], ["#ffb84d", "#ff6b4a"], ["#19d3a2", "#2a6bff"], ["#c6f432", "#12b886"],
+  ["#ff5ca8", "#ffb84d"], ["#2a6bff", "#7c5cff"], ["#232046", "#7c5cff"], ["#ff6b4a", "#ff2d6f"],
+];
+const ACCENTS = ["#8b6cff", "#ff5ca8", "#19d3a2", "#ffb84d", "#2a6bff", "#ff6b4a", "#c6f432", "#ffffff"];
+const bannerBg = (i) => { const b = BANNERS[i] || BANNERS[0]; return `linear-gradient(135deg, ${b[0]}, ${b[1]})`; };
+const accentOf = (i) => ACCENTS[i] || ACCENTS[0];
+
+// Кто сейчас слушает (последние 10 минут)
+function nowText(p) {
+  if (!p || !p.now_track || !p.now_at) return "";
+  const t = track(p.now_track);
+  return t && Date.now() - new Date(p.now_at).getTime() < 600000 ? `🎧 слушает «${t.title}»` : "";
+}

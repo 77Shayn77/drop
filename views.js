@@ -2,9 +2,10 @@
 // Экраны: Моменты, Треки, Чаты, Я, плеер.
 // ============================================================
 const TABS = [
-  ["moments", "Моменты"],
+  ["moments", "Лента"],
   ["tracks", "Треки"],
   ["chats", "Чаты"],
+  ["rooms", "Сообщества"],
   ["me", "Я"],
 ];
 const EMOJIS = ["🔥", "💜", "😮"];
@@ -19,7 +20,7 @@ function ago(iso) {
 const range = (t, start) => `${fmt(start)}–${fmt(Math.min(start + MOMENT_LEN, t.dur))}`;
 
 function setupNotice() {
-  return `<div class="notice">Этот раздел ещё не подключён к базе. Нужно один раз выполнить SQL из шага 4 (инструкция в чате), потом обновить страницу.</div>`;
+  return `<div class="notice">Этот раздел ещё не подключён к базе. Нужно один раз выполнить SQL из инструкции в чате, потом обновить страницу.</div>`;
 }
 
 // ---------- Карточка «Момента» ----------
@@ -51,20 +52,19 @@ function momentCard(m) {
 }
 
 function viewMoments() {
-  const first = TRACKS[0];
   let list = "";
   if (S.moments === null) list = `<div class="empty">Загружаем…</div>`;
   else if (S.momentsErr === "setup") list = setupNotice();
   else if (S.momentsErr) list = `<div class="alert">${esc(S.momentsErr)}</div>`;
   else if (!S.moments.length)
-    list = `<div class="empty"><b>Здесь пока тихо.</b><br>Включи любой трек, выбери 15 секунд, которые зацепили, и опубликуй первым.</div>`;
-  else list = S.moments.map(momentCard).join("");
-  return `<header class="top"><h1 class="h1">Моменты</h1><p class="muted">Не весь трек, а те самые 15 секунд.</p></header>
+    list = `<div class="empty"><b>Здесь пока тихо.</b><br>Опубликуй первое фото и подпиши его музыкой.</div>`;
+  else list = S.moments.map(postCard).join("");
+  return `<header class="top"><h1 class="h1">Лента</h1><p class="muted">Фото, у которых есть саундтрек.</p></header>
   <section class="hero">
-    <div><h2>Скинь не трек,<br>а момент</h2><p>Выбери 15 секунд, которые зацепили. Друзья услышат именно их, прямо в ленте или в чате.</p></div>
-    <button class="btn-dark" data-open="${S.nowId || first.id}">${ICON.bolt} Выбрать момент</button>
+    <div><h2>Каждому кадру<br>свой саундтрек</h2><p>Выложи фото и подпиши его музыкой: друзья увидят кадр и услышат, как он звучит.</p></div>
+    <button class="btn-dark" data-newpost="1">${ICON.camera} Новый пост</button>
   </section>
-  <h3 class="sec">Лента моментов</h3>${list}`;
+  <h3 class="sec">Свежее</h3>${list}`;
 }
 
 function viewTracks() {
@@ -101,10 +101,18 @@ function viewMe() {
   const p = S.auth.profile || {};
   return `<header class="top"><h1 class="h1">Я</h1></header>
   <section class="card"><div class="row">${avatar(p, 64)}<div class="grow"><div class="title">${esc(p.display_name || p.username)}</div><div class="muted">@${esc(p.username)}</div></div></div></section>
+  <section class="card form">
+    <b>Оформление</b>
+    <label class="btn-s" style="align-self:flex-start">${ICON.camera} Сменить аватар<input type="file" id="avatarIn" accept="image/*" hidden></label>
+    <div class="field">Баннер<div class="swatches">${BANNERS.map((_, i) => `<button type="button" data-banner="${i}" class="${(p.banner || 0) === i ? "on" : ""}"><i style="background:${bannerBg(i)}"></i></button>`).join("")}</div></div>
+    <div class="field">Цвет рамки аватара<div class="swatches">${ACCENTS.map((c, i) => `<button type="button" data-accent="${i}" class="${(p.accent || 0) === i ? "on" : ""}"><i style="background:${c}"></i></button>`).join("")}</div></div>
+    <button class="btn-s" data-profile="${p.id}" type="button">Посмотреть мой профиль</button>
+  </section>
   <form class="card form" id="profileForm">
     ${S.auth.error ? `<div class="alert">${esc(S.auth.error)}</div>` : ""}${S.auth.notice ? `<div class="notice">${esc(S.auth.notice)}</div>` : ""}
     <label class="field">Имя<input name="display_name" value="${esc(p.display_name || "")}" maxlength="40"></label>
     <label class="field">О себе<textarea name="bio" maxlength="160">${esc(p.bio || "")}</textarea></label>
+    <label class="field">Песня профиля<select name="profile_track" class="cap-in"><option value="">Без песни</option>${TRACKS.map((t) => `<option value="${t.id}" ${t.id === p.profile_track ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label>
     <button class="btn-a" ${S.auth.busy ? "disabled" : ""}>Сохранить</button>
     <button type="button" class="btn-s" data-logout="1">Выйти</button>
   </form>
@@ -127,7 +135,7 @@ function viewChats() {
   if (c.peer) {
     const p = c.peer;
     return `<div class="card chat">
-      <div class="chat-head"><button class="x" data-chatback="1" aria-label="Назад">${ICON.back}</button>${avatar(p, 38)}<div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">@${esc(p.username)}</div></div></div>
+      <div class="chat-head"><button class="x" data-chatback="1" aria-label="Назад">${ICON.back}</button><button data-profile="${p.id}">${avatar(p, 38)}</button><div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">${esc(nowText(p) || "@" + p.username)}</div></div></div>
       <div class="msgs" id="msgs">${c.err === "setup" ? setupNotice() : c.msgs.length ? c.msgs.map(msgBubble).join("") : `<div class="empty">Напиши первым 👋<br><span class="small">Кнопка ${ICON.note.replace(/width="22" height="22"/, 'width="16" height="16"')} отправит момент из плеера.</span></div>`}</div>
       <form class="compose" id="compose">
         <button type="button" class="send ghost" data-sendmoment="1" aria-label="Отправить момент">${ICON.note}</button>
@@ -139,7 +147,7 @@ function viewChats() {
   let body = "";
   if (c.err === "setup") body = setupNotice();
   else if (!people.length) body = `<div class="empty">${c.q.trim() ? "Никого не нашли." : "Диалогов пока нет. Найди человека по нику и напиши."}</div>`;
-  else body = people.map((p) => `<button class="card person" data-peer="${p.id}">${avatar(p, 46)}<div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">@${esc(p.username)}${p.last ? " · " + (p.last.track_id ? "🎵 момент" : esc((p.last.body || "").slice(0, 40))) : ""}</div></div>${S.unread[p.id] ? `<span class="badge">${S.unread[p.id]}</span>` : ""}</button>`).join("");
+  else body = people.map((p) => `<button class="card person" data-peer="${p.id}">${avatar(p, 46)}<div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">${nowText(p) ? esc(nowText(p)) : "@" + esc(p.username)}${p.last ? " · " + (p.last.track_id ? "🎵 момент" : esc((p.last.body || "").slice(0, 40))) : ""}</div></div>${S.unread[p.id] ? `<span class="badge">${S.unread[p.id]}</span>` : ""}</button>`).join("");
   return `<header class="top"><h1 class="h1">Чаты</h1></header>
   <label class="search">${ICON.search}<input id="q" placeholder="Найти по нику или имени" value="${esc(c.q)}" autocomplete="off"></label>${body}`;
 }
