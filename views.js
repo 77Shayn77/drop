@@ -20,7 +20,7 @@ function ago(iso) {
 const range = (t, start) => `${fmt(start)}–${fmt(Math.min(start + MOMENT_LEN, t.dur))}`;
 
 function setupNotice() {
-  return `<div class="notice">Этот раздел ещё не подключён к базе. Нужно один раз выполнить SQL из инструкции в чате, потом обновить страницу.</div>`;
+  return `<div class="notice">Этот раздел ещё не подключён к базе. Нужно один раз выполнить SQL из инструкции в чате, потом обновить страницу.<br><small class="muted">Причина: ${esc(DB.detail())}</small></div>`;
 }
 
 // ---------- Карточка «Момента» ----------

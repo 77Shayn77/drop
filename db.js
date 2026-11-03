@@ -5,9 +5,11 @@ const DB = (() => {
   const c = Auth.client;
 
   // Если таблиц ещё нет (не выполнен SQL) — говорим об этом по-человечески
+  let lastErr = "";
   function say(error) {
     if (!error) return "";
     console.error(error);
+    lastErr = (error.code || "") + " " + String(error.message || "").slice(0, 160);
     if (["42P01", "42703", "PGRST205", "PGRST204", "PGRST200", "PGRST100"].includes(error.code) || /does not exist|schema cache|relationship|column/i.test(error.message || ""))
       return "setup";
     return "Не получилось (" + (error.code || "") + " " + String(error.message || "").slice(0, 90) + ")";
@@ -126,5 +128,5 @@ const DB = (() => {
     c.from("profiles").update({ now_track: trackId, now_at: new Date().toISOString() }).eq("id", uid).then(() => {});
   }
 
-  return { moments, postMoment, deleteMoment, setReaction, search, peers, thread, send, subscribe, unsubscribe, profile, userPosts, setNow, say, client: c };
+  return { moments, postMoment, deleteMoment, setReaction, search, peers, thread, send, subscribe, unsubscribe, profile, userPosts, setNow, say, client: c, detail: () => lastErr };
 })();
