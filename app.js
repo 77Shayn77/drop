@@ -101,7 +101,7 @@ document.addEventListener("click", async (e) => {
     if (!m) return;
     const had = m.reactions.find((r) => r.user_id === me());
     m.reactions = m.reactions.filter((r) => r.user_id !== me());
-    const newEmoji = had && had.emoji === emoji ? null : emoji;
+    const newEmoji = had && rk(had.emoji) === emoji ? null : emoji;
     if (newEmoji) m.reactions.push({ emoji: newEmoji, user_id: me() });
     render(true);
     const err = await DB.setReaction(m.id, me(), newEmoji);

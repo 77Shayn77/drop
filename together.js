@@ -73,11 +73,11 @@ const Together = (() => {
 
   function inner() {
     const T = S.together, L = T.live, fresh = L && Date.now() - L.got < 15000;
-    if (T.host) return `<div class="tbar on">🎧 <span class="grow">Вы ведёте: <b>${esc((track(S.nowId) || {}).title || "")}</b></span><button class="btn-s sm" data-tstop="1">Остановить</button></div>`;
+    if (T.host) return `<div class="tbar on">${ico("headphones", 18)} <span class="grow">Вы ведёте: <b>${esc((track(S.nowId) || {}).title || "")}</b></span><button class="btn-s sm" data-tstop="1">Остановить</button></div>`;
     if (!fresh) return "";
     const t = track(L.trackId), name = esc(L.name), title = esc(t ? t.title : "трек");
-    if (T.follow) return `<div class="tbar on">🎧 <span class="grow">Слушаете вместе с <b>${name}</b>: «${title}»</span><button class="btn-s sm" data-tleave="1">Выйти</button></div>`;
-    return `<div class="tbar">🎧 <span class="grow"><b>${name}</b> слушает «${title}»</span><button class="btn-a sm" data-tjoin="1">Присоединиться</button></div>`;
+    if (T.follow) return `<div class="tbar on">${ico("headphones", 18)} <span class="grow">Слушаете вместе с <b>${name}</b>: «${title}»</span><button class="btn-s sm" data-tleave="1">Выйти</button></div>`;
+    return `<div class="tbar">${ico("headphones", 18)} <span class="grow"><b>${name}</b> слушает «${title}»</span><button class="btn-a sm" data-tjoin="1">Присоединиться</button></div>`;
   }
 
   function refresh() { const el = $("#tbar"); if (el) el.innerHTML = inner(); }

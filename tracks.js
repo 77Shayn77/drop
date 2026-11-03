@@ -117,5 +117,5 @@ document.addEventListener("submit", async (e) => {
     console.error(x);
     return fail("Ошибка: " + String(x.message || x).slice(0, 120));
   }
-  closeModal(); await loadUserTracks(); toast("Песня загружена 🎵"); go("tracks");
+  closeModal(); await loadUserTracks(); toast("Песня загружена"); go("tracks");
 }, true);

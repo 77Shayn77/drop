@@ -33,14 +33,15 @@ const RoomsDB = (() => {
   }
   async function messages(id) {
     const { data, error } = await c.from("room_messages")
-      .select("id,room_id,sender,body,track_id,start_sec,photo_url,created_at,profiles!room_messages_sender_fkey(username,display_name,avatar_url)")
+      .select("id,room_id,sender,body,track_id,start_sec,photo_url,voice_url,voice_dur,created_at,profiles!room_messages_sender_fkey(username,display_name,avatar_url)")
       .eq("room_id", id).order("created_at", { ascending: true }).limit(200);
     return { data: data || [], error: DB.say(error) };
   }
-  async function send(room_id, body, track_id, start_sec, photo_url) {
+  async function send(room_id, body, track_id, start_sec, photo_url, voice) {
     const row = { room_id, body: (body || "").slice(0, 2000) };
     if (track_id) { row.track_id = track_id; row.start_sec = start_sec; }
     if (photo_url) row.photo_url = photo_url;
+    if (voice) { row.voice_url = voice.url; row.voice_dur = voice.dur; }
     const { data, error } = await c.from("room_messages").insert(row).select("*").maybeSingle();
     return { msg: data, error: DB.say(error) };
   }
@@ -57,7 +58,7 @@ const RoomsDB = (() => {
 
 // ---------- Экран ----------
 const KIND = { group: "Группа", channel: "Канал" };
-const roomIcon = (r, size = 48) => `<span class="roomic" style="width:${size}px;height:${size}px;background:${bannerBg(r.color)};font-size:${Math.round(size * 0.46)}px">${r.emoji ? esc(r.emoji) : esc((r.name || "?").trim()[0] || "?").toUpperCase()}</span>`;
+const roomIcon = (r, size = 48) => `<span class="roomic" style="width:${size}px;height:${size}px;background:${bannerBg(r.color)};font-size:${Math.round(size * 0.46)}px">${r.emoji && ICO[r.emoji] ? ico(r.emoji, Math.round(size * 0.52)) : r.emoji ? esc(r.emoji) : esc((r.name || "?").trim()[0] || "?").toUpperCase()}</span>`;
 const canPostHere = () => S.rooms.cur && S.rooms.role && (S.rooms.cur.kind === "group" || ["owner", "admin"].includes(S.rooms.role));
 
 function roomMsg(m) {
@@ -67,8 +68,12 @@ function roomMsg(m) {
   const head = !mineMsg || chan ? `<button class="rname" data-profile="${m.sender}">${esc(who.display_name || who.username)}</button>` : "";
   return `<div class="bubble ${mineMsg && !chan ? "me" : ""} ${chan ? "wide" : ""}">${head}
     ${m.photo_url ? `<img class="photo" src="${esc(m.photo_url)}" alt="Фото" loading="lazy">` : ""}
-    ${m.body ? `<div>${esc(m.body)}</div>` : ""}${t ? momentBtn(t, m.start_sec || 0, m.photo_url ? "Саундтрек" : "Момент") : ""}</div>`;
+    ${m.body ? `<div>${esc(m.body)}</div>` : ""}${m.voice_url ? voiceBtn(m) : ""}${t ? momentBtn(t, m.start_sec || 0, m.photo_url ? "Саундтрек" : "Момент") : ""}</div>`;
 }
+
+const iconPicker = (cur) =>
+  `<label><input type="radio" name="emoji" value="" ${!cur ? "checked" : ""} hidden><span class="ipick">Аа</span></label>` +
+  ROOM_ICONS.map((k) => `<label><input type="radio" name="emoji" value="${k}" ${cur === k ? "checked" : ""} hidden><span class="ipick">${ico(k, 22)}</span></label>`).join("");
 
 function roomInfo(r, owner) {
   return `<div class="roominfo">${r.cover_url ? `<img src="${esc(r.cover_url)}" alt="">` : ""}<div class="ri-in"><b>${esc(r.name)}</b><p>${esc(r.about || "Описания пока нет.")}</p>
@@ -82,15 +87,15 @@ function viewRooms() {
   if (R.cur) {
     const r = R.cur, joined = !!R.role, owner = R.role === "owner";
     const foot = canPostHere()
-      ? `<form class="compose" id="roomCompose"><button type="button" class="send ghost" data-roommoment="1" aria-label="Отправить момент">${ICON.note}</button>
+      ? `<form class="compose empty" id="roomCompose"><button type="button" class="send ghost" data-roommoment="1" aria-label="Отправить момент">${ICON.note}</button>
           <label class="send ghost" aria-label="Фото">${ICON.camera}<input type="file" id="roomPhoto" accept="image/*" hidden></label>
-          <input name="text" placeholder="${r.kind === "channel" ? "Новый пост в канале…" : "Сообщение…"}" autocomplete="off" maxlength="2000"><button class="send" aria-label="Отправить">${ICON.send}</button></form>`
+          <input name="text" placeholder="${r.kind === "channel" ? "Новый пост в канале…" : "Сообщение…"}" autocomplete="off" maxlength="2000"><button class="send sendb" aria-label="Отправить">${ICON.send}</button><button type="button" class="send micb" aria-label="Голосовое: удерживайте">${ICON.mic}</button></form>`
       : `<div class="roomfoot">${joined ? "В этом канале пишут только админы" : `<button class="btn-a" data-join="${r.id}">${r.kind === "channel" ? "Подписаться" : "Вступить"}</button>`}</div>`;
     return `<div class="card chat"><div class="chat-head"><button class="x" data-roomback="1" aria-label="Назад">${ICON.back}</button>${roomIcon(r, 38)}
       <div class="grow"><b>${esc(r.name)}</b><div class="muted small">${KIND[r.kind]} · ${r.n || 0} уч.${r.about ? " · " + esc(r.about.slice(0, 40)) : ""}</div></div>
-      ${joined && r.kind === "group" ? `<button class="x tg" data-together="1" aria-label="Слушать вместе" title="Слушать вместе">🎧</button>` : ""}<button class="x" data-roominfo="1" aria-label="О сообществе">ℹ️</button>${owner ? `<button class="x" data-roomedit="1" aria-label="Настроить">⚙️</button>` : ""}${joined && !owner ? `<button class="btn-s sm" data-leave="${r.id}">Выйти</button>` : ""}</div>
+      ${joined && r.kind === "group" ? `<button class="x tg" data-together="1" aria-label="Слушать вместе" title="Слушать вместе">${ico("headphones", 20)}</button>` : ""}<button class="x" data-roominfo="1" aria-label="О сообществе">${ico("info", 20)}</button>${owner ? `<button class="x" data-roomedit="1" aria-label="Настроить">${ico("settings", 20)}</button>` : ""}${joined && !owner ? `<button class="btn-s sm" data-leave="${r.id}">Выйти</button>` : ""}</div>
       ${togetherBar()}${R.info ? roomInfo(r, owner) : ""}
-      <div class="msgs" id="msgs">${R.err === "setup" ? setupNotice() : R.msgs.length ? R.msgs.map(roomMsg).join("") : `<div class="empty">${canPostHere() ? "Пока пусто. Напиши первым 👋" : "Здесь пока нет записей."}</div>`}</div>${foot}</div>`;
+      <div class="msgs" id="msgs">${R.err === "setup" ? setupNotice() : R.msgs.length ? R.msgs.map(roomMsg).join("") : `<div class="empty">${canPostHere() ? "Пока пусто. Напиши первым" : "Здесь пока нет записей."}</div>`}</div>${foot}</div>`;
   }
   const card = (r) => `<button class="card person" data-room="${r.id}">${roomIcon(r)}<div class="grow"><b>${esc(r.name)}</b><div class="muted small">${KIND[r.kind]} · ${r.n || 0} уч.${r.about ? " · " + esc(r.about.slice(0, 36)) : ""}</div></div></button>`;
   return `<header class="top row"><h1 class="h1 grow">Сообщества</h1><button class="btn-a sm" data-newroom="1">${ICON.plus} Создать</button></header>
@@ -132,10 +137,10 @@ function openRoomForm() {
   const m = $("#modal"); m.hidden = false; document.body.classList.add("noscroll");
   m.innerHTML = `<div class="modal-in"><div class="row"><b class="title grow">Новое сообщество</b><button class="x" data-modalclose="1" aria-label="Закрыть">${ICON.close}</button></div>
     <form id="roomForm" class="form">
-      <div class="seg"><label><input type="radio" name="kind" value="group" checked hidden><span>👥 Группа<small>пишут все</small></span></label><label><input type="radio" name="kind" value="channel" hidden><span>📣 Канал<small>пишет только админ</small></span></label></div>
+      <div class="seg"><label><input type="radio" name="kind" value="group" checked hidden><span>${ico("people", 22)} Группа<small>пишут все</small></span></label><label><input type="radio" name="kind" value="channel" hidden><span>${ico("megaphone", 22)} Канал<small>пишет только админ</small></span></label></div>
       <label class="field">Название<input name="name" maxlength="40" required placeholder="Например: Лоу-фай по вечерам"></label>
       <label class="field">Описание<input name="about" maxlength="120" placeholder="О чём это сообщество"></label>
-      <label class="field">Значок (эмодзи)<input name="emoji" maxlength="4" placeholder="🎧"></label>
+      <div class="field">Значок<div class="swatches">${iconPicker("")}</div></div>
       <div class="field">Цвет<div class="swatches">${BANNERS.map((_, i) => `<label><input type="radio" name="color" value="${i}" ${i === 0 ? "checked" : ""} hidden><i style="background:${bannerBg(i)}"></i></label>`).join("")}</div></div>
       <button class="btn-a">Создать</button></form></div>`;
 }
@@ -148,7 +153,7 @@ function openRoomEdit() {
       <label class="field">Название<input name="name" maxlength="40" required value="${esc(r.name)}"></label>
       <label class="field">Описание<input name="about" maxlength="120" value="${esc(r.about || "")}"></label>
       <label class="field">Правила<textarea name="rules" maxlength="400" placeholder="Например: без спама, только музыка">${esc(r.rules || "")}</textarea></label>
-      <label class="field">Значок (эмодзи)<input name="emoji" maxlength="4" value="${esc(r.emoji || "")}"></label>
+      <div class="field">Значок<div class="swatches">${iconPicker(r.emoji || "")}</div></div>
       <div class="field">Цвет<div class="swatches">${BANNERS.map((_, i) => `<label><input type="radio" name="color" value="${i}" ${(r.color || 0) === i ? "checked" : ""} hidden><i style="background:${bannerBg(i)}"></i></label>`).join("")}</div></div>
       <label class="pick small"><input type="file" id="roomCover" accept="image/*" hidden><span id="rcTxt">${ICON.camera}<b>${r.cover_url ? "Сменить обложку" : "Обложка"}</b><small>необязательно</small></span><img id="rcPrev" alt="" hidden></label>
       <div class="alert" id="roomErr" hidden></div>
@@ -168,7 +173,7 @@ document.addEventListener("click", async (e) => {
   if (d.join) {
     const err = await RoomsDB.join(+d.join);
     if (err) return toast("Не получилось вступить");
-    R.role = "member"; if (R.cur) R.cur.n = (R.cur.n || 0) + 1; toast("Готово ✓"); return render(true);
+    R.role = "member"; if (R.cur) R.cur.n = (R.cur.n || 0) + 1; toast("Готово"); return render(true);
   }
   if (d.leave) {
     if (!confirm("Выйти из сообщества?")) return;
@@ -230,14 +235,14 @@ document.addEventListener("submit", async (e) => {
       if (err) return fail(err === "setup" ? "Нужен SQL шага 6 (step6.sql)." : "Не сохранилось.");
       Object.assign(r, fields);
     } catch (x) { console.error(x); return fail("Ошибка: " + String(x.message || x).slice(0, 100)); }
-    closeModal(); toast("Сохранено ✓"); render(true); return;
+    closeModal(); toast("Сохранено"); render(true); return;
   }
   if (f.id === "roomForm") {
     e.preventDefault(); e.stopImmediatePropagation();
     const v = Object.fromEntries(new FormData(f));
     const r = await RoomsDB.create(v.kind, v.name.trim(), (v.about || "").trim(), +v.color, { emoji: (v.emoji || "").trim() });
     if (r.error) return toast(r.error === "setup" ? "Нужен SQL из шага 5" : r.error);
-    closeModal(); toast("Создано ⚡");
+    closeModal(); toast("Создано");
     await loadRooms(); openRoom(r.room.id);
   }
 }, true);

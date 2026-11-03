@@ -60,7 +60,7 @@ const DB = (() => {
   async function peers(meId) {
     const { data, error } = await c
       .from("messages")
-      .select("id,sender,receiver,body,track_id,created_at")
+      .select("id,sender,receiver,body,track_id,voice_url,created_at")
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) return { list: [], error: say(error) };
@@ -80,16 +80,17 @@ const DB = (() => {
   async function thread(meId, peerId) {
     const { data, error } = await c
       .from("messages")
-      .select("id,sender,receiver,body,track_id,start_sec,created_at")
+      .select("id,sender,receiver,body,track_id,start_sec,voice_url,voice_dur,created_at")
       .or(`and(sender.eq.${meId},receiver.eq.${peerId}),and(sender.eq.${peerId},receiver.eq.${meId})`)
       .order("created_at", { ascending: true })
       .limit(200);
     return { data: data || [], error: say(error) };
   }
 
-  async function send(receiver, body, track_id, start_sec) {
+  async function send(receiver, body, track_id, start_sec, voice) {
     const row = { receiver, body: (body || "").slice(0, 2000) };
     if (track_id) { row.track_id = track_id; row.start_sec = start_sec; }
+    if (voice) { row.voice_url = voice.url; row.voice_dur = voice.dur; }
     const { data, error } = await c.from("messages").insert(row).select().maybeSingle();
     return { msg: data, error: say(error) };
   }

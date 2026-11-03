@@ -8,9 +8,9 @@ function postCard(m) {
   const who = m.profiles || { username: "user", display_name: "user" };
   const rs = m.reactions || [];
   const mine = rs.find((r) => r.user_id === me());
-  const btns = EMOJIS.map((e) => {
-    const n = rs.filter((r) => r.emoji === e).length;
-    return `<button class="react ${mine && mine.emoji === e ? "on" : ""}" data-react="${m.id}:${e}">${e}<span>${n || ""}</span></button>`;
+  const btns = REACT_KEYS.map((e) => {
+    const n = rs.filter((r) => rk(r.emoji) === e).length;
+    return `<button class="react ${mine && rk(mine.emoji) === e ? "on" : ""}" data-react="${m.id}:${e}">${ico(e, 20)}<span>${n || ""}</span></button>`;
   }).join("");
   return `<article class="card post" ${t ? `style="--c1:${t.c1};--c2:${t.c2}"` : ""}>
     <div class="row"><button class="who" data-profile="${m.user_id}">${avatar(who, 40)}<span class="grow"><b>${esc(who.display_name || who.username)}</b><span class="muted small">@${esc(who.username)} · ${ago(m.created_at)}</span></span></button>
@@ -75,7 +75,7 @@ async function publishPost(form) {
     console.error(e);
     return fail("Ошибка: " + String(e.message || e).slice(0, 120));
   }
-  closeModal(); toast("Опубликовано ⚡"); S.moments = null; go("moments");
+  closeModal(); toast("Опубликовано"); S.moments = null; go("moments");
 }
 
 // ---------- Публичный профиль ----------
@@ -99,7 +99,7 @@ function viewProfile() {
     <div class="banner" style="background:${bannerBg(p.banner)}"></div>
     <div class="prof-in"><div class="ava-ring">${avatar(p, 88)}</div>
       <div class="title">${esc(p.display_name || p.username)}</div><div class="muted">@${esc(p.username)}</div>
-      ${nt ? `<div class="sticker lime">${esc(nt)}</div>` : ""}
+      ${nt ? `<div class="sticker lime">${nowHtml(p)}</div>` : ""}
       ${p.bio ? `<p class="bio">${esc(p.bio)}</p>` : ""}
       ${pt ? `<div class="muted small" style="margin-top:12px">Песня профиля</div>${momentBtn(pt, pt.hot, "Моя песня")}` : ""}
       <div class="row" style="margin-top:14px">${mineP ? `<button class="btn-s" data-view="me">Редактировать</button>` : `<button class="btn-a" data-writeto="${p.id}">Написать</button>`}</div>

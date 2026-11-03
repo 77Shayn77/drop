@@ -46,9 +46,10 @@ const ACCENTS = ["#8b6cff", "#ff5ca8", "#19d3a2", "#ffb84d", "#2a6bff", "#ff6b4a
 const bannerBg = (i) => { const b = BANNERS[i] || BANNERS[0]; return `linear-gradient(135deg, ${b[0]}, ${b[1]})`; };
 const accentOf = (i) => ACCENTS[i] || ACCENTS[0];
 
+const nowHtml = (p) => (nowText(p) ? `${ico("headphones", 14)} ${esc(nowText(p))}` : "");
 // Кто сейчас слушает (последние 10 минут)
 function nowText(p) {
   if (!p || !p.now_track || !p.now_at) return "";
   const t = track(p.now_track);
-  return t && Date.now() - new Date(p.now_at).getTime() < 600000 ? `🎧 слушает «${t.title}»` : "";
+  return t && Date.now() - new Date(p.now_at).getTime() < 600000 ? `слушает «${t.title}»` : "";
 }

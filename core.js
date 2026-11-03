@@ -56,6 +56,7 @@ const me = () => (S.auth.user ? S.auth.user.id : null);
 
 // ---------- Звук ----------
 const au = new Audio();
+au.crossOrigin = "anonymous";
 au.preload = "metadata";
 let until = null; // секунда, на которой остановиться (для «Момента»)
 let playKey = null; // что именно сейчас играет: "id" или "id:начало"
@@ -63,6 +64,7 @@ let playKey = null; // что именно сейчас играет: "id" ил�
 function startPlayback(id, from, to, key) {
   const t = track(id);
   if (!t) return;
+  if (typeof FX !== "undefined") { FX.init(); FX.resume(); }
   until = to == null ? null : to;
   playKey = key;
   const go = () => { if (from != null) au.currentTime = from; au.play().catch(() => {}); };
@@ -89,6 +91,7 @@ function playMoment(id, start) {
 }
 function toggleNow() {
   if (!S.nowId) return;
+  if (typeof FX !== "undefined") { FX.init(); FX.resume(); }
   if (au.paused) au.play().catch(() => {}); else au.pause();
 }
 function step(dir) {
@@ -99,7 +102,7 @@ function step(dir) {
 
 au.addEventListener("play", () => { S.playing = true; sync(true); });
 au.addEventListener("pause", () => { S.playing = false; sync(true); });
-au.addEventListener("ended", () => { if (until == null) step(1); });
+au.addEventListener("ended", () => { if (until == null) { if (typeof FX !== "undefined") FX.next(); else step(1); } });
 au.addEventListener("timeupdate", () => {
   if (until != null && au.currentTime >= until) { until = null; au.pause(); }
   sync(false);
@@ -121,5 +124,5 @@ function setTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
   try { localStorage.setItem("drop-theme", t); } catch (e) {}
   const b = $("#theme");
-  if (b) b.innerHTML = t === "dark" ? "☀️ Светлая" : "🌙 Тёмная";
+  if (b) b.innerHTML = t === "dark" ? ico("sun", 18) + " Светлая" : ico("moon", 18) + " Тёмная";
 }

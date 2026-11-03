@@ -8,7 +8,7 @@ const TABS = [
   ["rooms", "Сообщества"],
   ["me", "Я"],
 ];
-const EMOJIS = ["🔥", "💜", "😮"];
+
 
 function ago(iso) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -30,25 +30,6 @@ function momentBtn(t, start, label) {
     <span class="mtxt"><b>${esc(label || "Момент")}</b><small>${esc(t.title)} · ${range(t, start)}</small></span>
     <span class="mprog"><span></span></span>
   </button>`;
-}
-
-function momentCard(m) {
-  const t = track(m.track_id);
-  if (!t) return "";
-  const who = m.profiles || { username: "user", display_name: "user" };
-  const rs = m.reactions || [];
-  const mine = rs.find((r) => r.user_id === me());
-  const btns = EMOJIS.map((e) => {
-    const n = rs.filter((r) => r.emoji === e).length;
-    return `<button class="react ${mine && mine.emoji === e ? "on" : ""}" data-react="${m.id}:${e}">${e}<span>${n || ""}</span></button>`;
-  }).join("");
-  return `<article class="card moment" style="--c1:${t.c1};--c2:${t.c2}">
-    <div class="row">${avatar(who, 38)}<div class="grow"><b>${esc(who.display_name || who.username)}</b><div class="muted small">@${esc(who.username)} · ${ago(m.created_at)}</div></div>
-    ${m.user_id === me() ? `<button class="x" data-delmoment="${m.id}" aria-label="Удалить">${ICON.close}</button>` : ""}</div>
-    ${m.caption ? `<p class="cap">${esc(m.caption)}</p>` : ""}
-    ${momentBtn(t, m.start_sec, "Момент")}
-    <div class="reacts">${btns}</div>
-  </article>`;
 }
 
 function viewMoments() {
@@ -126,6 +107,7 @@ function msgBubble(m) {
   const mineMsg = m.sender === me();
   let inner = m.body ? `<div>${esc(m.body)}</div>` : "";
   const t = m.track_id ? track(m.track_id) : null;
+  if (m.voice_url) inner += voiceBtn(m);
   if (t) inner += momentBtn(t, m.start_sec || 0, "Момент");
   return `<div class="bubble ${mineMsg ? "me" : ""}">${inner}</div>`;
 }
@@ -136,19 +118,20 @@ function viewChats() {
   if (c.peer) {
     const p = c.peer;
     return `<div class="card chat">
-      <div class="chat-head"><button class="x" data-chatback="1" aria-label="Назад">${ICON.back}</button><button data-profile="${p.id}">${avatar(p, 38)}</button><div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">${esc(nowText(p) || "@" + p.username)}</div></div></div>
-      <div class="msgs" id="msgs">${c.err === "setup" ? setupNotice() : c.msgs.length ? c.msgs.map(msgBubble).join("") : `<div class="empty">Напиши первым 👋<br><span class="small">Кнопка ${ICON.note.replace(/width="22" height="22"/, 'width="16" height="16"')} отправит момент из плеера.</span></div>`}</div>
-      <form class="compose" id="compose">
+      <div class="chat-head"><button class="x" data-chatback="1" aria-label="Назад">${ICON.back}</button><button data-profile="${p.id}">${avatar(p, 38)}</button><div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">${nowHtml(p) || "@" + esc(p.username)}</div></div></div>
+      <div class="msgs" id="msgs">${c.err === "setup" ? setupNotice() : c.msgs.length ? c.msgs.map(msgBubble).join("") : `<div class="empty">Напиши первым<br><span class="small">Кнопка с нотой отправит момент из плеера, а микрофон запишет голосовое.</span></div>`}</div>
+      <form class="compose empty" id="compose">
         <button type="button" class="send ghost" data-sendmoment="1" aria-label="Отправить момент">${ICON.note}</button>
         <input name="text" placeholder="Сообщение…" autocomplete="off" maxlength="2000">
-        <button class="send" aria-label="Отправить">${ICON.send}</button>
+        <button class="send sendb" aria-label="Отправить">${ICON.send}</button>
+        <button type="button" class="send micb" aria-label="Голосовое: удерживайте">${ICON.mic}</button>
       </form></div>`;
   }
   const people = c.q.trim() ? c.found : c.peers;
   let body = "";
   if (c.err === "setup") body = setupNotice();
   else if (!people.length) body = `<div class="empty">${c.q.trim() ? "Никого не нашли." : "Диалогов пока нет. Найди человека по нику и напиши."}</div>`;
-  else body = people.map((p) => `<button class="card person" data-peer="${p.id}">${avatar(p, 46)}<div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">${nowText(p) ? esc(nowText(p)) : "@" + esc(p.username)}${p.last ? " · " + (p.last.track_id ? "🎵 момент" : esc((p.last.body || "").slice(0, 40))) : ""}</div></div>${S.unread[p.id] ? `<span class="badge">${S.unread[p.id]}</span>` : ""}</button>`).join("");
+  else body = people.map((p) => `<button class="card person" data-peer="${p.id}">${avatar(p, 46)}<div class="grow"><b>${esc(p.display_name || p.username)}</b><div class="muted small">${nowHtml(p) || "@" + esc(p.username)}${p.last ? " · " + (p.last.voice_url ? "голосовое" : p.last.track_id ? "момент" : esc((p.last.body || "").slice(0, 40))) : ""}</div></div>${S.unread[p.id] ? `<span class="badge">${S.unread[p.id]}</span>` : ""}</button>`).join("");
   return `<header class="top"><h1 class="h1">Чаты</h1></header>
   <label class="search">${ICON.search}<input id="q" placeholder="Найти по нику или имени" value="${esc(c.q)}" autocomplete="off"></label>${body}`;
 }
@@ -178,7 +161,8 @@ function renderSheet() {
     <div class="center"><div class="title">${esc(t.title)}</div><div class="muted">${esc(t.artist)} · ${esc(t.genre)}</div></div>
     <div class="wave" id="wave">${hs.map((h, i) => `<b data-i="${i}" style="height:${h}%"></b>`).join("")}</div>
     <div class="times"><span id="sCur">0:00</span><span>${fmt(t.dur)}</span></div>
-    <div class="ctrl"><button data-step="-1" aria-label="Назад">${ICON.prev}</button><button class="playbtn big" data-toggle="1" aria-label="Играть">${ICON.play}${ICON.pause}</button><button data-step="1" aria-label="Дальше">${ICON.next}</button></div>
+    <div class="ctrl"><button data-shuffle="1" class="${S.shuffle ? "on" : ""}" aria-label="Вперемешку">${ICON.shuffle}</button><button data-step="-1" aria-label="Назад">${ICON.prev}</button><button class="playbtn big" data-toggle="1" aria-label="Играть">${ICON.play}${ICON.pause}</button><button data-step="1" aria-label="Дальше">${ICON.next}</button><button data-repeat="1" class="${S.repeat ? "on" : ""}" aria-label="Повтор">${S.repeat === 2 ? ICON.repeat1 : ICON.repeat}</button></div>
+    ${soundPanel()}
     <div class="card mpanel">
       <div class="row"><b>${ICON.bolt} Твой момент</b><span class="sticker lime grow-r" id="mLabel"></span></div>
       <input type="range" id="mrange" min="0" max="${max}" value="${clamp(S.mstart, 0, max)}" aria-label="Начало момента">
@@ -188,6 +172,7 @@ function renderSheet() {
       <button class="btn-a" data-postmoment="1">Опубликовать в ленту</button>
     </div></div>`;
   paintSheet();
+  if (typeof voiceSync === "function") voiceSync();
 }
 
 function paintSheet() {
@@ -219,4 +204,5 @@ function sync(full) {
     if (pr) pr.style.width = on ? clamp(((cur - +st) / MOMENT_LEN) * 100, 0, 100) + "%" : "0%";
   });
   paintSheet();
+  if (typeof voiceSync === "function") voiceSync();
 }
