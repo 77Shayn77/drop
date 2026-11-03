@@ -165,3 +165,46 @@ input[type="range"] { width: 100%; height: 36px; accent-color: var(--a); }
   .chat { height: calc(100dvh - 260px); }
   .main { max-width: none; width: 100%; }
 }
+
+/* ===== Фото-посты, профиль, сообщества ===== */
+.who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left; }
+.who .grow { display: flex; flex-direction: column; }
+.photo { display: block; width: 100%; max-height: 460px; object-fit: cover; border-radius: 18px; margin-top: 12px; background: var(--card2); }
+.btn-a.sm { height: 42px; padding: 0 16px; font-size: 14px; gap: 6px; }
+.btn-s.sm { height: 36px; padding: 0 14px; font-size: 13px; }
+.top.row { align-items: center; }
+.back { background: var(--card); }
+
+.modal { position: fixed; inset: 0; z-index: 40; background: rgba(8, 6, 18, 0.7); display: flex; align-items: flex-end; justify-content: center; overflow-y: auto; }
+.modal-in { width: min(520px, 100%); max-height: 94dvh; overflow-y: auto; background: var(--bg); border-radius: 28px 28px 0 0; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 14px; border: 1.5px solid var(--line); }
+@media (min-width: 801px) { .modal { align-items: center; } .modal-in { border-radius: 28px; } }
+.pick { position: relative; display: flex; align-items: center; justify-content: center; min-height: 150px; border-radius: 20px; border: 2px dashed var(--line); overflow: hidden; cursor: pointer; }
+.pick span { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--mu); }
+.pick span b { color: var(--tx); }
+.pick img { width: 100%; max-height: 320px; object-fit: cover; display: block; }
+textarea.tall { height: 84px; padding: 12px 16px; resize: none; }
+select.cap-in { appearance: auto; }
+
+.prof { padding: 0; overflow: hidden; }
+.banner { height: 120px; }
+.prof-in { padding: 0 18px 18px; margin-top: -44px; }
+.ava-ring { display: inline-block; border-radius: 50%; padding: 4px; background: var(--acc, var(--a)); margin-bottom: 8px; }
+.ava-ring .avatar { display: flex; border: 3px solid var(--card); }
+.bio { margin: 10px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+
+.roomic { flex: none; border-radius: 30%; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-family: "Unbounded", sans-serif; font-weight: 600; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+.rname { display: block; font-weight: 800; font-size: 13px; color: var(--at); margin-bottom: 2px; }
+.bubble.me .rname { color: #fff; }
+.bubble.wide { max-width: 100%; align-self: stretch; border-radius: 20px; }
+.bubble .photo { margin-top: 6px; max-height: 320px; }
+.roomfoot { padding: 14px; border-top: 1.5px solid var(--line); text-align: center; color: var(--mu); font-weight: 700; }
+label.send { cursor: pointer; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg span { display: flex; flex-direction: column; padding: 12px; border-radius: 16px; border: 2px solid var(--line); font-weight: 800; }
+.seg small { color: var(--mu); font-weight: 600; }
+.seg input:checked + span { border-color: var(--a); background: var(--card2); }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.swatches label, .swatches button { display: inline-flex; padding: 3px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
+.swatches i { display: block; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); }
+.swatches button.on, .swatches input:checked + i { outline: 3px solid var(--tx); outline-offset: 2px; }
+.swatches input:checked + i { outline: 3px solid var(--tx); outline-offset: 2px; }
