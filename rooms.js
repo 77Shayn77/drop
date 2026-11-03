@@ -33,7 +33,7 @@ const RoomsDB = (() => {
   }
   async function messages(id) {
     const { data, error } = await c.from("room_messages")
-      .select("id,room_id,sender,body,track_id,start_sec,photo_url,created_at,profiles(username,display_name,avatar_url)")
+      .select("id,room_id,sender,body,track_id,start_sec,photo_url,created_at,profiles!room_messages_sender_fkey(username,display_name,avatar_url)")
       .eq("room_id", id).order("created_at", { ascending: true }).limit(200);
     return { data: data || [], error: DB.say(error) };
   }

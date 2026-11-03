@@ -36,7 +36,7 @@ function openComposer(preTrack, preStart) {
         <select name="track" id="trackSel" class="cap-in"><option value="">Без музыки</option>${TRACKS.map((t) => `<option value="${t.id}" ${t.id === tr ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></label>
       <div id="startWrap" ${tr ? "" : "hidden"}><div class="row"><span class="muted small grow">С какой секунды играть 15 секунд</span><span class="sticker lime" id="startLbl"></span></div>
         <input type="range" id="startRange" min="0" value="${preStart || 0}"></div>
-      <button class="btn-a" id="postGo">Опубликовать</button></form></div>`;
+      <div class="alert" id="postErr" hidden></div><button class="btn-a" id="postGo">Опубликовать</button></form></div>`;
   syncComposer(preStart);
 }
 
@@ -56,18 +56,25 @@ function closeModal() {
 }
 
 async function publishPost(form) {
-  const btn = $("#postGo"), file = $("#photoIn").files[0];
+  const btn = $("#postGo"), er = $("#postErr"), file = $("#photoIn").files[0];
+  const fail = (msg) => { btn.disabled = false; btn.textContent = "Опубликовать"; er.hidden = false; er.textContent = msg; };
+  er.hidden = true;
   const caption = form.caption.value.trim(), tid = form.track.value;
-  if (!file && !caption && !tid) return toast("Добавьте фото, текст или музыку");
+  if (!file && !caption && !tid) return fail("Добавьте фото, текст или музыку.");
   btn.disabled = true; btn.textContent = "Публикуем…";
-  let url = null;
-  if (file) {
-    const up = await Media.upload(await Media.shrink(file, 1280, false), me());
-    if (up.error) { btn.disabled = false; btn.textContent = "Опубликовать"; return toast(up.error === "setup" ? "Нужен SQL из шага 5" : up.error); }
-    url = up.url;
+  try {
+    let url = null;
+    if (file) {
+      const up = await Media.upload(await Media.shrink(file, 1280, false), me());
+      if (up.error) return fail(up.error);
+      url = up.url;
+    }
+    const err = await DB.postMoment(tid, +$("#startRange").value, caption, url);
+    if (err) return fail("Пост не сохранился. Причина: " + DB.detail());
+  } catch (e) {
+    console.error(e);
+    return fail("Ошибка: " + String(e.message || e).slice(0, 120));
   }
-  const err = await DB.postMoment(tid, +$("#startRange").value, caption, url);
-  if (err) { btn.disabled = false; btn.textContent = "Опубликовать"; return toast(err === "setup" ? "Нужен SQL из шага 5" : err); }
   closeModal(); toast("Опубликовано ⚡"); S.moments = null; go("moments");
 }
 

@@ -19,7 +19,7 @@ const DB = (() => {
     if (!c) return { data: [], error: "Нет связи с сервером." };
     const { data, error } = await c
       .from("moments")
-      .select("id,user_id,track_id,start_sec,caption,photo_url,created_at,profiles(username,display_name,avatar_url,accent),reactions(emoji,user_id)")
+      .select("id,user_id,track_id,start_sec,caption,photo_url,created_at,profiles!moments_user_id_fkey(username,display_name,avatar_url,accent),reactions(emoji,user_id)")
       .order("created_at", { ascending: false })
       .limit(40);
     return { data: data || [], error: say(error) };
@@ -116,7 +116,7 @@ const DB = (() => {
   async function userPosts(uid) {
     const { data, error } = await c
       .from("moments")
-      .select("id,user_id,track_id,start_sec,caption,photo_url,created_at,profiles(username,display_name,avatar_url,accent),reactions(emoji,user_id)")
+      .select("id,user_id,track_id,start_sec,caption,photo_url,created_at,profiles!moments_user_id_fkey(username,display_name,avatar_url,accent),reactions(emoji,user_id)")
       .eq("user_id", uid).order("created_at", { ascending: false }).limit(30);
     return { data: data || [], error: say(error) };
   }

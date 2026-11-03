@@ -4,7 +4,8 @@
 const Media = (() => {
   // Уменьшает фото до max пикселей. square = обрезать в квадрат (для аватара)
   async function shrink(file, max, square) {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    let bmp;
+    try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); } catch (e) { bmp = await createImageBitmap(file); }
     let sx = 0, sy = 0, sw = bmp.width, sh = bmp.height;
     if (square) { const m = Math.min(sw, sh); sx = (sw - m) / 2; sy = (sh - m) / 2; sw = sh = m; }
     const k = Math.min(1, max / Math.max(sw, sh));
@@ -19,7 +20,7 @@ const Media = (() => {
     const c = Auth.client;
     const path = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
     const { error } = await c.storage.from("photos").upload(path, blob, { contentType: "image/jpeg" });
-    if (error) { console.error(error); return { error: /bucket|not found/i.test(error.message || "") ? "setup" : "Не удалось загрузить фото." }; }
+    if (error) { console.error(error); return { error: "Фото не загрузилось: " + String(error.message || error).slice(0, 120) }; }
     return { url: c.storage.from("photos").getPublicUrl(path).data.publicUrl };
   }
 
