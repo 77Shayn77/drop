@@ -37,7 +37,7 @@ function avatar(p, size = 44) {
   for (const ch of (p && p.username) || name) h = (h * 31 + ch.charCodeAt(0)) % 997;
   return `<span class="avatar" style="width:${size}px;height:${size}px;background:${AV_COLORS[h % AV_COLORS.length]};font-size:${Math.round(size * 0.4)}px">${esc(name.trim()[0] || "?").toUpperCase()}</span>`;
 }
-const cover = (t, cls = "") => `<span class="cover ${cls}" style="background:${coverBg(t)}"><i></i></span>`;
+const cover = (t, cls = "") => `<span class="cover ${cls} ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></span>`;
 
 // ---------- Состояние ----------
 const S = {

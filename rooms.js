@@ -1,13 +1,13 @@
 // ============================================================
 // Группы и каналы: база, экран и события.
 // ============================================================
-const freshRooms = () => ({ mine: [], found: [], err: "", cur: null, role: null, msgs: [], loaded: false });
+const freshRooms = () => ({ mine: [], found: [], err: "", cur: null, role: null, msgs: [], loaded: false, info: false });
 S.rooms = freshRooms();
 const pcache = {}; // профили авторов сообщений
 
 const RoomsDB = (() => {
   const c = Auth.client;
-  const ROOM = "id,kind,name,about,color,owner,room_members(count)";
+  const ROOM = "id,kind,name,about,color,owner,emoji,cover_url,rules,room_members(count)";
   const cnt = (r) => (r.room_members && r.room_members[0] ? r.room_members[0].count : 0);
 
   async function lists(uid) {
@@ -19,8 +19,8 @@ const RoomsDB = (() => {
     const found = (b.data || []).filter((r) => !ids.has(r.id)).map((r) => ({ ...r, n: cnt(r) }));
     return { error: "", mine, found };
   }
-  async function create(kind, name, about, color) {
-    const { data, error } = await c.from("rooms").insert({ kind, name, about, color }).select().maybeSingle();
+  async function create(kind, name, about, color, extra) {
+    const { data, error } = await c.from("rooms").insert({ kind, name, about, color, ...(extra || {}) }).select().maybeSingle();
     if (error || !data) return { error: DB.say(error) || "Не получилось." };
     const m = await c.from("room_members").insert({ room_id: data.id, role: "owner" });
     return { room: data, error: DB.say(m.error) };
@@ -44,6 +44,7 @@ const RoomsDB = (() => {
     const { data, error } = await c.from("room_messages").insert(row).select("*").maybeSingle();
     return { msg: data, error: DB.say(error) };
   }
+  async function update(id, fields) { return DB.say((await c.from("rooms").update(fields).eq("id", id)).error); }
   async function deleteRoom(id) { return DB.say((await c.from("rooms").delete().eq("id", id)).error); }
   let ch = null;
   function watch(id, cb) {
@@ -51,12 +52,12 @@ const RoomsDB = (() => {
     ch = c.channel("room-" + id).on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: "room_id=eq." + id }, (p) => cb(p.new)).subscribe();
   }
   function unwatch() { if (ch) c.removeChannel(ch); ch = null; }
-  return { lists, create, join, leave, role, messages, send, deleteRoom, watch, unwatch };
+  return { lists, create, update, join, leave, role, messages, send, deleteRoom, watch, unwatch };
 })();
 
 // ---------- Экран ----------
 const KIND = { group: "Группа", channel: "Канал" };
-const roomIcon = (r, size = 48) => `<span class="roomic" style="width:${size}px;height:${size}px;background:${bannerBg(r.color)};font-size:${size * 0.42}px">${esc((r.name || "?").trim()[0] || "?").toUpperCase()}</span>`;
+const roomIcon = (r, size = 48) => `<span class="roomic" style="width:${size}px;height:${size}px;background:${bannerBg(r.color)};font-size:${Math.round(size * 0.46)}px">${r.emoji ? esc(r.emoji) : esc((r.name || "?").trim()[0] || "?").toUpperCase()}</span>`;
 const canPostHere = () => S.rooms.cur && S.rooms.role && (S.rooms.cur.kind === "group" || ["owner", "admin"].includes(S.rooms.role));
 
 function roomMsg(m) {
@@ -67,6 +68,12 @@ function roomMsg(m) {
   return `<div class="bubble ${mineMsg && !chan ? "me" : ""} ${chan ? "wide" : ""}">${head}
     ${m.photo_url ? `<img class="photo" src="${esc(m.photo_url)}" alt="Фото" loading="lazy">` : ""}
     ${m.body ? `<div>${esc(m.body)}</div>` : ""}${t ? momentBtn(t, m.start_sec || 0, m.photo_url ? "Саундтрек" : "Момент") : ""}</div>`;
+}
+
+function roomInfo(r, owner) {
+  return `<div class="roominfo">${r.cover_url ? `<img src="${esc(r.cover_url)}" alt="">` : ""}<div class="ri-in"><b>${esc(r.name)}</b><p>${esc(r.about || "Описания пока нет.")}</p>
+    ${r.rules ? `<div class="muted small"><b>Правила</b><br>${esc(r.rules)}</div>` : ""}
+    ${owner ? `<button class="btn-s sm" data-delroom="${r.id}">Удалить сообщество</button>` : ""}</div></div>`;
 }
 
 function viewRooms() {
@@ -81,7 +88,8 @@ function viewRooms() {
       : `<div class="roomfoot">${joined ? "В этом канале пишут только админы" : `<button class="btn-a" data-join="${r.id}">${r.kind === "channel" ? "Подписаться" : "Вступить"}</button>`}</div>`;
     return `<div class="card chat"><div class="chat-head"><button class="x" data-roomback="1" aria-label="Назад">${ICON.back}</button>${roomIcon(r, 38)}
       <div class="grow"><b>${esc(r.name)}</b><div class="muted small">${KIND[r.kind]} · ${r.n || 0} уч.${r.about ? " · " + esc(r.about.slice(0, 40)) : ""}</div></div>
-      ${joined && !owner ? `<button class="btn-s sm" data-leave="${r.id}">Выйти</button>` : ""}${owner ? `<button class="x" data-delroom="${r.id}" aria-label="Удалить">${ICON.close}</button>` : ""}</div>
+      ${joined && r.kind === "group" ? `<button class="x tg" data-together="1" aria-label="Слушать вместе" title="Слушать вместе">🎧</button>` : ""}<button class="x" data-roominfo="1" aria-label="О сообществе">ℹ️</button>${owner ? `<button class="x" data-roomedit="1" aria-label="Настроить">⚙️</button>` : ""}${joined && !owner ? `<button class="btn-s sm" data-leave="${r.id}">Выйти</button>` : ""}</div>
+      ${togetherBar()}${R.info ? roomInfo(r, owner) : ""}
       <div class="msgs" id="msgs">${R.err === "setup" ? setupNotice() : R.msgs.length ? R.msgs.map(roomMsg).join("") : `<div class="empty">${canPostHere() ? "Пока пусто. Напиши первым 👋" : "Здесь пока нет записей."}</div>`}</div>${foot}</div>`;
   }
   const card = (r) => `<button class="card person" data-room="${r.id}">${roomIcon(r)}<div class="grow"><b>${esc(r.name)}</b><div class="muted small">${KIND[r.kind]} · ${r.n || 0} уч.${r.about ? " · " + esc(r.about.slice(0, 36)) : ""}</div></div></button>`;
@@ -100,12 +108,13 @@ async function loadRooms() {
 async function openRoom(id) {
   const R = S.rooms, r = [...R.mine, ...R.found].find((x) => x.id === id);
   if (!r) return;
-  R.cur = r; R.msgs = []; R.role = r.role || null; R.err = "";
+  R.cur = r; R.msgs = []; R.role = r.role || null; R.err = ""; R.info = false;
   render();
   const [role, msgs] = await Promise.all([RoomsDB.role(id, me()), RoomsDB.messages(id)]);
   if (!R.cur || R.cur.id !== id) return;
   R.role = role; R.msgs = msgs.data; R.err = msgs.error;
   RoomsDB.watch(id, onRoomMsg);
+  if (typeof Together !== "undefined") Together.join(id);
   render(true);
 }
 
@@ -116,7 +125,7 @@ function onRoomMsg(m) {
   if (S.view === "rooms") render(true);
 }
 
-function closeRoom() { RoomsDB.unwatch(); S.rooms.cur = null; loadRooms(); render(); }
+function closeRoom() { RoomsDB.unwatch(); if (typeof Together !== "undefined") Together.leave(); S.rooms.cur = null; loadRooms(); render(); }
 
 // ---------- Создание ----------
 function openRoomForm() {
@@ -126,17 +135,35 @@ function openRoomForm() {
       <div class="seg"><label><input type="radio" name="kind" value="group" checked hidden><span>👥 Группа<small>пишут все</small></span></label><label><input type="radio" name="kind" value="channel" hidden><span>📣 Канал<small>пишет только админ</small></span></label></div>
       <label class="field">Название<input name="name" maxlength="40" required placeholder="Например: Лоу-фай по вечерам"></label>
       <label class="field">Описание<input name="about" maxlength="120" placeholder="О чём это сообщество"></label>
+      <label class="field">Значок (эмодзи)<input name="emoji" maxlength="4" placeholder="🎧"></label>
       <div class="field">Цвет<div class="swatches">${BANNERS.map((_, i) => `<label><input type="radio" name="color" value="${i}" ${i === 0 ? "checked" : ""} hidden><i style="background:${bannerBg(i)}"></i></label>`).join("")}</div></div>
       <button class="btn-a">Создать</button></form></div>`;
 }
 
+function openRoomEdit() {
+  const r = S.rooms.cur;
+  const m = $("#modal"); m.hidden = false; document.body.classList.add("noscroll");
+  m.innerHTML = `<div class="modal-in"><div class="row"><b class="title grow">Настройки</b><button class="x" data-modalclose="1" aria-label="Закрыть">${ICON.close}</button></div>
+    <form id="roomEditForm" class="form">
+      <label class="field">Название<input name="name" maxlength="40" required value="${esc(r.name)}"></label>
+      <label class="field">Описание<input name="about" maxlength="120" value="${esc(r.about || "")}"></label>
+      <label class="field">Правила<textarea name="rules" maxlength="400" placeholder="Например: без спама, только музыка">${esc(r.rules || "")}</textarea></label>
+      <label class="field">Значок (эмодзи)<input name="emoji" maxlength="4" value="${esc(r.emoji || "")}"></label>
+      <div class="field">Цвет<div class="swatches">${BANNERS.map((_, i) => `<label><input type="radio" name="color" value="${i}" ${(r.color || 0) === i ? "checked" : ""} hidden><i style="background:${bannerBg(i)}"></i></label>`).join("")}</div></div>
+      <label class="pick small"><input type="file" id="roomCover" accept="image/*" hidden><span id="rcTxt">${ICON.camera}<b>${r.cover_url ? "Сменить обложку" : "Обложка"}</b><small>необязательно</small></span><img id="rcPrev" alt="" hidden></label>
+      <div class="alert" id="roomErr" hidden></div>
+      <button class="btn-a" id="roomGo">Сохранить</button></form></div>`;
+}
+
 // ---------- События ----------
 document.addEventListener("click", async (e) => {
-  const el = e.target.closest("[data-room],[data-newroom],[data-roomback],[data-join],[data-leave],[data-roommoment],[data-delroom]");
+  const el = e.target.closest("[data-room],[data-newroom],[data-roomback],[data-join],[data-leave],[data-roommoment],[data-delroom],[data-roominfo],[data-roomedit]");
   if (!el) return;
   const d = el.dataset, R = S.rooms;
   if (d.room) return openRoom(+d.room);
   if (d.newroom) return openRoomForm();
+  if (d.roominfo) { R.info = !R.info; return render(true); }
+  if (d.roomedit) return openRoomEdit();
   if (d.roomback) return closeRoom();
   if (d.join) {
     const err = await RoomsDB.join(+d.join);
@@ -164,6 +191,7 @@ document.addEventListener("click", async (e) => {
 });
 
 document.addEventListener("change", async (e) => {
+  if (e.target.id === "roomCover" && e.target.files[0]) { const pr = $("#rcPrev"); pr.src = URL.createObjectURL(e.target.files[0]); pr.hidden = false; $("#rcTxt").hidden = true; return; }
   if (e.target.id !== "roomPhoto" || !e.target.files[0]) return;
   const f = e.target.files[0], text = ($("#roomCompose input[name=text]") || {}).value || "";
   toast("Отправляем фото…");
@@ -185,10 +213,29 @@ document.addEventListener("submit", async (e) => {
     onRoomMsg({ ...r.msg, profiles: S.auth.profile });
     const i = $("#roomCompose input[name=text]"); if (i) i.focus();
   }
+  if (f.id === "roomEditForm") {
+    e.preventDefault(); e.stopImmediatePropagation();
+    const btn = $("#roomGo"), er = $("#roomErr"), r = S.rooms.cur, v = Object.fromEntries(new FormData(f));
+    const fail = (msg) => { btn.disabled = false; btn.textContent = "Сохранить"; er.hidden = false; er.textContent = msg; };
+    btn.disabled = true; btn.textContent = "Сохраняем…"; er.hidden = true;
+    try {
+      const fields = { name: v.name.trim(), about: (v.about || "").trim(), rules: (v.rules || "").trim(), emoji: (v.emoji || "").trim(), color: +v.color };
+      const file = $("#roomCover").files[0];
+      if (file) {
+        const up = await Media.upload(await Media.shrink(file, 1280, false), me());
+        if (up.error) return fail(up.error);
+        fields.cover_url = up.url;
+      }
+      const err = await RoomsDB.update(r.id, fields);
+      if (err) return fail(err === "setup" ? "Нужен SQL шага 6 (step6.sql)." : "Не сохранилось.");
+      Object.assign(r, fields);
+    } catch (x) { console.error(x); return fail("Ошибка: " + String(x.message || x).slice(0, 100)); }
+    closeModal(); toast("Сохранено ✓"); render(true); return;
+  }
   if (f.id === "roomForm") {
     e.preventDefault(); e.stopImmediatePropagation();
     const v = Object.fromEntries(new FormData(f));
-    const r = await RoomsDB.create(v.kind, v.name.trim(), (v.about || "").trim(), +v.color);
+    const r = await RoomsDB.create(v.kind, v.name.trim(), (v.about || "").trim(), +v.color, { emoji: (v.emoji || "").trim() });
     if (r.error) return toast(r.error === "setup" ? "Нужен SQL из шага 5" : r.error);
     closeModal(); toast("Создано ⚡");
     await loadRooms(); openRoom(r.room.id);

@@ -182,6 +182,6 @@ document.addEventListener("submit", async (e) => {
   setTheme(t);
   $$("[data-app-name]").forEach((n) => (n.textContent = APP_NAME));
   render();
-  loadMoments();
+  loadUserTracks().then(() => { loadMoments(); render(true); });
   Auth.init(onAuth);
 })();

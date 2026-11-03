@@ -12,7 +12,20 @@ const TRACKS = [
 ];
 
 const track = (id) => TRACKS.find((t) => t.id === id);
-const coverBg = (t) => `linear-gradient(135deg, ${t.c1}, ${t.c2})`;
+const coverBg = (t) => (t.cover_url ? `url('${t.cover_url}') center / cover no-repeat` : `linear-gradient(135deg, ${t.c1}, ${t.c2})`);
+
+// Песни пользователей добавляются к общему списку
+function setUserTracks(rows) {
+  for (let i = TRACKS.length - 1; i >= 0; i--) if (TRACKS[i].user_id) TRACKS.splice(i, 1);
+  for (const r of rows) {
+    const b = BANNERS[r.color] || BANNERS[0], who = r.profiles || {};
+    TRACKS.push({
+      id: "u" + r.id, user_id: r.user_id, dbid: r.id, title: r.title, genre: r.genre || "своё",
+      artist: r.artist || who.display_name || who.username || "Автор", src: r.src, dur: r.dur,
+      hot: Math.max(0, Math.min(Math.floor(r.dur * 0.4), r.dur - MOMENT_LEN)), c1: b[0], c2: b[1], cover_url: r.cover_url || null,
+    });
+  }
+}
 
 // Одинаковые «волны» для одного и того же трека
 function waveHeights(id, n) {

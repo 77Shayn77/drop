@@ -68,14 +68,15 @@ function viewMoments() {
 }
 
 function viewTracks() {
-  return `<header class="top"><h1 class="h1">Треки</h1><p class="muted">Оригинальные демо-треки. Тапни на обложку, чтобы открыть плеер.</p></header>` +
+  return `<header class="top row"><div class="grow"><h1 class="h1">Треки</h1><p class="muted">Демо-треки и песни пользователей.</p></div><button class="btn-a sm" data-newtrack="1">${ICON.plus} Своя песня</button></header>` +
     TRACKS.map((t) => `<article class="card track" style="--c1:${t.c1};--c2:${t.c2}">
       <div class="row">
         <button class="cover-btn" data-open="${t.id}" aria-label="Открыть плеер">${cover(t, "big")}</button>
         <div class="grow"><div class="title">${esc(t.title)}</div><div class="muted">${esc(t.artist)}</div><span class="sticker">${esc(t.genre)} · ${fmt(t.dur)}</span></div>
+        ${t.user_id && t.user_id === me() ? `<button class="x" data-deltrack="${t.id}" aria-label="Удалить">${ICON.close}</button>` : ""}
         <button class="playbtn" data-play="${t.id}" aria-label="Играть">${ICON.play}${ICON.pause}</button>
       </div>
-      ${momentBtn(t, t.hot, "Лучший момент")}
+      ${t.dur > MOMENT_LEN ? momentBtn(t, t.hot, "Лучший момент") : ""}
     </article>`).join("");
 }
 
@@ -173,7 +174,7 @@ function renderSheet() {
   const max = Math.max(1, t.dur - MOMENT_LEN);
   el.innerHTML = `<div class="sheet-in" style="--c1:${t.c1};--c2:${t.c2}">
     <button class="x close" data-sheetclose="1" aria-label="Закрыть">${ICON.close}</button>
-    <div class="art" style="background:${coverBg(t)}"><i></i></div>
+    <div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>
     <div class="center"><div class="title">${esc(t.title)}</div><div class="muted">${esc(t.artist)} · ${esc(t.genre)}</div></div>
     <div class="wave" id="wave">${hs.map((h, i) => `<b data-i="${i}" style="height:${h}%"></b>`).join("")}</div>
     <div class="times"><span id="sCur">0:00</span><span>${fmt(t.dur)}</span></div>
