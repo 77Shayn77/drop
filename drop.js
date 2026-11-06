@@ -1,4 +1,4 @@
-// Дроп: весь код сайта в одном файле
+// Riff: весь код сайта в одном файле
 /* ===== auth.js ===== */
 // ============================================================
 // Вход, регистрация и профиль. Здесь вся связь с Supabase.
@@ -113,10 +113,10 @@ const Auth = (() => {
 const MOMENT_LEN = 15; // длина «Момента» в секундах
 
 const TRACKS = [
-  { id: "night-bus", title: "Ночной автобус", artist: "Студия Дроп", genre: "синти-поп", src: "night-bus.mp3", dur: 65, hot: 28, c1: "#7c5cff", c2: "#ff5ca8" },
-  { id: "kitchen-morning", title: "Кухонное утро", artist: "Студия Дроп", genre: "лоу-фай", src: "kitchen-morning.mp3", dur: 64, hot: 36, c1: "#ffb84d", c2: "#ff6b4a" },
-  { id: "basement-808", title: "Подвал 808", artist: "Студия Дроп", genre: "хип-хоп", src: "basement-808.mp3", dur: 57, hot: 24, c1: "#19d3a2", c2: "#2a6bff" },
-  { id: "head-noise", title: "Шум в голове", artist: "Студия Дроп", genre: "электроника", src: "head-noise.mp3", dur: 66, hot: 30, c1: "#c6f432", c2: "#12b886" },
+  { id: "night-bus", title: "Ночной автобус", artist: "Студия Riff", genre: "синти-поп", src: "night-bus.mp3", dur: 65, hot: 28, c1: "#7c5cff", c2: "#ff5ca8" },
+  { id: "kitchen-morning", title: "Кухонное утро", artist: "Студия Riff", genre: "лоу-фай", src: "kitchen-morning.mp3", dur: 64, hot: 36, c1: "#ffb84d", c2: "#ff6b4a" },
+  { id: "basement-808", title: "Подвал 808", artist: "Студия Riff", genre: "хип-хоп", src: "basement-808.mp3", dur: 57, hot: 24, c1: "#19d3a2", c2: "#2a6bff" },
+  { id: "head-noise", title: "Шум в голове", artist: "Студия Riff", genre: "электроника", src: "head-noise.mp3", dur: 66, hot: 30, c1: "#c6f432", c2: "#12b886" },
 ];
 
 const track = (id) => TRACKS.find((t) => t.id === id);
@@ -318,7 +318,7 @@ const DB = (() => {
 // ============================================================
 // Основа: вспомогательные функции, иконки, состояние, звук.
 // ============================================================
-const APP_NAME = "Дроп";
+const APP_NAME = "Riff";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -443,7 +443,7 @@ const rich = (s) => esc(s).replace(/(^|[^A-Za-z0-9_@])@([A-Za-z0-9_]{3,20})/g, (
 
 /* ===== icons.js ===== */
 // ============================================================
-// Значки, нарисованные для Дропа (вместо смайликов).
+// Значки, нарисованные для Riff (вместо смайликов).
 // ico("fire", 20) возвращает готовую картинку нужного размера.
 // ============================================================
 const ICO = {
