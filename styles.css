@@ -511,3 +511,25 @@ button { transition: transform 0.12s ease, filter 0.15s, background-color 0.15s,
 .btn-s.warn { color: #ff6b6b; border-color: color-mix(in srgb, #ff6b6b 50%, var(--line)); }
 .mdel { float: left; margin-top: 4px; margin-right: 8px; padding: 0; background: none; color: inherit; opacity: 0.45; line-height: 0; }
 .mdel:hover { opacity: 0.9; }
+
+/* ---------- Прослушивания, исполнитель, каталог, списки в профиле ---------- */
+.plays { display: inline-flex; align-items: center; gap: 4px; color: var(--mu); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.plays:empty { display: none; }
+.chip.sm { height: 30px; padding: 0 12px; font-size: 12px; background: transparent; border: 1px solid var(--line); }
+.chip.on { background: var(--a); color: var(--on-a, #fff); border-color: transparent; }
+.stats { flex-wrap: wrap; row-gap: 6px; }
+.avrow { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 10px; scrollbar-width: none; }
+.avrow::-webkit-scrollbar { display: none; }
+.fchip { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 68px; flex: none; font-size: 12px; font-weight: 700; color: var(--tx); }
+.fchip .ell { max-width: 68px; }
+.artrow { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.artrow::-webkit-scrollbar { display: none; }
+.artchip { flex: none; width: 132px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px; text-align: center; }
+.artchip .ell { max-width: 110px; }
+.listen { display: flex; align-items: center; gap: 6px; margin: -6px 4px 12px; }
+.listen button { margin-right: -10px; }
+.listen button .avatar { border: 2px solid var(--bg); }
+.listen span { margin-left: 14px; }
+a.btn-s { display: inline-flex; align-items: center; text-decoration: none; }
+.ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.btn-s { color: var(--tx); }

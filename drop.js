@@ -395,6 +395,7 @@ function startPlayback(id, from, to, key) {
   else au.addEventListener("loadedmetadata", go, { once: true });
   sync(true);
   if (typeof DB !== "undefined") DB.setNow(id, me());
+  if (typeof Catalog !== "undefined") Catalog.persist(id);
 }
 
 function playTrack(id) {
@@ -692,7 +693,7 @@ function renderSheet() {
     <i class="grab" aria-hidden="true"></i>
     <button class="x close" data-sheetclose="1" aria-label="Закрыть">${ICON.close}</button>
     <div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>
-    <div class="center"><div class="title">${esc(t.title)}</div><div class="muted">${artistLink(t)} · ${esc(t.genre)}</div></div>
+    <div class="center"><div class="title">${esc(t.title)}</div><div class="muted">${artistLink(t)} · ${esc(t.genre)} ${playsHtml(t)}</div></div>
     <div class="wave" id="wave">${hs.map((h, i) => `<b data-i="${i}" style="height:${h}%"></b>`).join("")}</div>
     <div class="times"><span id="sCur">0:00</span><span>${fmt(t.dur)}</span></div>
     <div class="ctrl"><button data-shuffle="1" class="${S.shuffle ? "on" : ""}" aria-label="Вперемешку">${ICON.shuffle}</button><button data-step="-1" aria-label="Назад">${ICON.prev}</button><button class="playbtn big" data-toggle="1" aria-label="Играть">${ICON.play}${ICON.pause}</button><button data-step="1" aria-label="Дальше">${ICON.next}</button><button data-repeat="1" class="${S.repeat ? "on" : ""}" aria-label="Повтор">${S.repeat === 2 ? ICON.repeat1 : ICON.repeat}</button></div>
@@ -706,6 +707,7 @@ function renderSheet() {
       <button class="btn-a" data-postmoment="1">Опубликовать в ленту</button>
     </div></div>`;
   paintSheet();
+  Plays.paint();
   if (typeof voiceSync === "function") voiceSync();
 }
 
@@ -858,9 +860,12 @@ async function openProfile(id) {
   if (S.sheet) { S.sheet = false; renderSheet(); }
   S.profileId = id; S.prof = null;
   S.view = "profile"; render();
-  const [p, posts] = await Promise.all([DB.profile(id), DB.userPosts(id)]);
+  const rpcList = (name) => (DB.client ? DB.client.rpc(name, { uid: id }).then((r) => (r.error ? null : r.data || []), () => null) : Promise.resolve(null));
+  const [p, posts, friends, rooms] = await Promise.all([DB.profile(id), DB.userPosts(id), rpcList("user_friends"), rpcList("user_rooms")]);
   if (S.profileId !== id) return;
-  S.prof = { p, posts: posts.data };
+  await Plays.load(TRACKS.filter((t) => t.user_id === id).map((t) => t.id));
+  if (S.profileId !== id) return;
+  S.prof = { p, posts: posts.data, friends, rooms };
   if (S.view === "profile") render(true);
 }
 
@@ -877,20 +882,22 @@ function viewProfile() {
       <div class="title">${esc(p.display_name || p.username)}</div><div class="muted">@${esc(p.username)}</div>
       ${nt ? `<div class="sticker lime">${nowHtml(p)}</div>` : ""}
       ${p.bio ? `<p class="bio">${rich(p.bio)}</p>` : ""}
-      ${profStats(p, d.posts)}
+      ${profStats(p, d.posts, d)}
       ${pt ? `<div class="muted small" style="margin-top:12px">Песня профиля</div>${momentBtn(pt, pt.hot, "Моя песня")}` : ""}
       ${profileActions(p, mineP)}
     </div></section>
   ${artistBlock(p)}
+  ${listsBlock(p, d)}
   <h3 class="sec">Посты</h3>${p.posts_policy === "friends" && !mineP && !Friends.isFriend(p.id) ? `<div class="empty">${ico("lock", 28)}<br>Посты видят только друзья.</div>` : d.posts.length ? d.posts.map(postCard).join("") : `<div class="empty">Пока ничего не опубликовано.</div>`}`;
 }
 
 // ---------- События ----------
 document.addEventListener("click", async (e) => {
-  const el = e.target.closest("[data-profile],[data-newpost],[data-modalclose],[data-writeto],[data-banner],[data-accent]");
+  const el = e.target.closest("[data-profile],[data-newpost],[data-modalclose],[data-writeto],[data-banner],[data-accent],[data-proomopen]");
   if (!el) return;
   const d = el.dataset;
   if (d.profile) return openProfile(d.profile);
+  if (d.proomopen) { S.view = "rooms"; await loadRooms(); return openRoom(+d.proomopen); }
   if (d.newpost !== undefined) return openComposer();
   if (d.modalclose) return closeModal();
   if (d.writeto) { S.view = "chats"; S.chat.q = ""; await loadPeers(); return openPeer(d.writeto); }
@@ -1132,7 +1139,11 @@ const RoomsDB = (() => {
     const { error } = await c.from("rooms").update({ invite_code: code }).eq("id", id);
     return error ? { error: DB.say(error) } : { code };
   }
-  return { lists, create, update, join, leave, role, messages, send, members, bans, kick, setRole, unban, deleteMessage, deleteRoom, watch, unwatch, preview, joinByCode, resetCode };
+  async function one(id) {
+    const { data } = await c.from("rooms").select(ROOM).eq("id", id).maybeSingle();
+    return data ? { ...data, n: cnt(data) } : null;
+  }
+  return { one, lists, create, update, join, leave, role, messages, send, members, bans, kick, setRole, unban, deleteMessage, deleteRoom, watch, unwatch, preview, joinByCode, resetCode };
 })();
 
 // ---------- Экран ----------
@@ -1223,8 +1234,9 @@ async function loadRooms() {
 }
 
 async function openRoom(id) {
-  const R = S.rooms, r = [...R.mine, ...R.found].find((x) => x.id === id);
-  if (!r) return;
+  const R = S.rooms;
+  let r = [...R.mine, ...R.found].find((x) => x.id === id);
+  if (!r) { r = await RoomsDB.one(id); if (!r) return toast("Сообщество недоступно"); R.found.push(r); }
   R.cur = r; R.msgs = []; R.role = r.role || null; R.err = ""; R.info = false; R.members = null; R.bans = [];
   render();
   const [role, msgs] = await Promise.all([RoomsDB.role(id, me()), RoomsDB.messages(id)]);
@@ -1871,11 +1883,28 @@ function commentsBox(m) {
   return h + `<div class="cmbox">${list}<form class="cmform" id="cmForm" data-mid="${m.id}"><input name="text" placeholder="Написать комментарий…" maxlength="500" autocomplete="off"><button class="send" aria-label="Отправить">${ICON.send}</button></form></div>`;
 }
 
-const artistLink = (t) => (t.user_id ? `<button class="alink" data-profile="${t.user_id}">${esc(t.artist)}</button>` : esc(t.artist));
+const artistLink = (t) => (t.user_id ? `<button class="alink" data-profile="${t.user_id}">${esc(t.artist)}</button>` : t.ext && t.artist && t.artist !== "Audius" ? `<button class="alink" data-artist="${t.artist_id ? "au:" + esc(t.artist_id) : "q:" + esc(t.artist)}">${esc(t.artist)}</button>` : esc(t.artist));
 
-function profStats(p, posts) {
-  const songs = TRACKS.filter((t) => t.user_id === p.id).length;
-  return `<div class="stats"><span><b>${songs}</b> песен</span><span><b>${posts.length}</b> постов</span></div>`;
+const listsLocked = (p) => {
+  const pol = p.lists_policy || "all";
+  return p.id !== me() && (pol === "none" || (pol === "friends" && !Friends.isFriend(p.id)));
+};
+
+function profStats(p, posts, d) {
+  const mine = TRACKS.filter((t) => t.user_id === p.id), plays = mine.reduce((s, t) => s + playsOf(t), 0);
+  const open = d && !listsLocked(p);
+  return `<div class="stats"><span><b>${mine.length}</b> песен</span><span><b>${posts.length}</b> постов</span>${plays ? `<span><b>${fmtN(plays)}</b> прослушиваний</span>` : ""}${open && d.friends ? `<span><b>${d.friends.length}</b> друзей</span>` : ""}${open && d.rooms ? `<span><b>${d.rooms.length}</b> сообществ</span>` : ""}</div>`;
+}
+
+// Друзья и сообщества в профиле (если человек их не скрыл)
+function listsBlock(p, d) {
+  if (listsLocked(p)) return `<div class="empty">${ico("lock", 28)}<br>${(p.lists_policy || "all") === "none" ? "Друзья и сообщества скрыты." : "Друзей и сообщества видят только друзья."}</div>`;
+  if (d.friends === null && d.rooms === null) return "";
+  const fr = d.friends || [], rm = d.rooms || [];
+  if (!fr.length && !rm.length) return `<div class="muted small" style="margin-top:12px">Друзей и сообществ пока нет.</div>`;
+  const KINDS = { group: "Группа", channel: "Канал" };
+  return (fr.length ? `<h3 class="sec">Друзья · ${fr.length}</h3><div class="avrow">${fr.map((u) => `<button class="fchip" data-profile="${u.id}">${avatar(u, 52)}<span class="ell">${esc(u.display_name || u.username)}</span></button>`).join("")}</div>` : "")
+    + (rm.length ? `<h3 class="sec">Сообщества · ${rm.length}</h3>${rm.map((r) => `<button class="card person" data-proomopen="${r.id}">${roomIcon(r)}<div class="grow"><b>${esc(r.name)}</b><div class="muted small">${KINDS[r.kind] || "Сообщество"} · ${r.n || 0} уч.</div></div></button>`).join("")}` : "");
 }
 
 function artistBlock(p) {
@@ -1883,7 +1912,7 @@ function artistBlock(p) {
   if (!songs.length) return "";
   return `<div class="row" style="margin-top:6px"><h3 class="sec grow">Песни</h3><button class="btn-a sm" data-playall="${p.id}">${ICON.play.replace('width="22" height="22"', 'width="16" height="16"')} Слушать всё</button></div>` +
     songs.map((t) => `<div class="card songrow" style="--c1:${t.c1};--c2:${t.c2}"><button class="cover-btn" data-open="${t.id}">${cover(t)}</button>
-      <div class="grow"><b>${esc(t.title)}</b><div class="muted small">${esc(t.genre)} · ${fmt(t.dur)}</div></div>
+      <div class="grow"><b>${esc(t.title)}</b><div class="muted small">${esc(t.genre)} · ${fmt(t.dur)} ${playsHtml(t)}</div></div>
       <button class="playbtn sm" data-playq="${t.id}" aria-label="Играть">${ICON.play}${ICON.pause}</button></div>`).join("");
 }
 
@@ -1907,6 +1936,8 @@ function privacyCard(p) {
       <select class="cap-in" data-priv="dm_policy"><option value="all" ${(p.dm_policy || "all") === "all" ? "selected" : ""}>Все</option><option value="friends" ${p.dm_policy === "friends" ? "selected" : ""}>Только друзья</option><option value="none" ${p.dm_policy === "none" ? "selected" : ""}>Никто</option></select></label>
     <label class="field">Кто видит мои посты
       <select class="cap-in" data-priv="posts_policy"><option value="all" ${(p.posts_policy || "all") === "all" ? "selected" : ""}>Все</option><option value="friends" ${p.posts_policy === "friends" ? "selected" : ""}>Только друзья</option></select></label>
+    <label class="field">Кто видит моих друзей и сообщества
+      <select class="cap-in" data-priv="lists_policy"><option value="all" ${(p.lists_policy || "all") === "all" ? "selected" : ""}>Все</option><option value="friends" ${p.lists_policy === "friends" ? "selected" : ""}>Только друзья</option><option value="none" ${p.lists_policy === "none" ? "selected" : ""}>Никто</option></select></label>
     ${blocked}</section>`;
 }
 
@@ -1970,7 +2001,7 @@ document.addEventListener("change", async (e) => {
   const key = t.dataset.priv, val = t.type === "checkbox" ? t.checked : t.value, f = { [key]: val };
   if (key === "show_now" && !val) { f.now_track = null; f.now_at = null; }
   const r = await Auth.saveProfile(me(), f);
-  if (r.error || !r.profile) { toast("Нужен SQL шага " + ({ show_online: 10, posts_policy: 11 }[key] || 8)); return render(true); }
+  if (r.error || !r.profile) { toast("Нужен SQL шага " + ({ show_online: 10, posts_policy: 11, lists_policy: 13 }[key] || 8)); return render(true); }
   S.auth.profile = r.profile; toast("Сохранено");
   if (key === "show_online") Presence.apply();
 });
@@ -2324,18 +2355,98 @@ const ChatMedia = (() => {
   return { sendFile };
 })();
 
+/* ===== plays.js ===== */
+// ============================================================
+// Прослушивания. Считаем, когда человек послушал песню хотя бы 10 секунд
+// (один человек не чаще раза в минуту на одну песню). Нужен SQL шага 13.
+// У песен из каталога к нашему числу добавляются прослушивания на Audius.
+// ============================================================
+S.plays = {};
+
+function fmtN(n) {
+  n = Math.round(n || 0);
+  if (n < 1000) return String(n);
+  const f = (v) => (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10).toString().replace(".", ",");
+  if (n < 1e6) return f(n / 1000) + " тыс.";
+  return f(n / 1e6) + " млн";
+}
+const playsOf = (t) => (S.plays[t.id] || 0) + (t.ap || 0);
+const playsInner = (t) => (playsOf(t) > 0 ? `${ico("headphones", 13)} ${fmtN(playsOf(t))}` : "");
+const playsHtml = (t) => `<span class="plays" data-plays="${esc(t.id)}" title="Прослушиваний">${playsInner(t)}</span>`;
+
+const Plays = (() => {
+  const c = Auth.client;
+  const known = new Set();
+  let broken = false, tm = null;
+
+  function paintEls() {
+    $$("[data-plays]").forEach((el) => {
+      const t = track(el.dataset.plays);
+      const h = t ? playsInner(t) : "";
+      if (el.innerHTML !== h) el.innerHTML = h;
+    });
+  }
+
+  async function fetchIds(ids) {
+    ids = [...new Set(ids)].filter((i) => !known.has(i));
+    if (!c || broken || !ids.length) return;
+    ids.forEach((i) => known.add(i));
+    for (let k = 0; k < ids.length; k += 150) {
+      const part = ids.slice(k, k + 150);
+      const { data, error } = await c.from("track_stats").select("track_id,plays").in("track_id", part);
+      if (error) { broken = true; return; }
+      (data || []).forEach((r) => (S.plays[r.track_id] = Number(r.plays) || 0));
+    }
+  }
+
+  // Подписи на экране: показываем сразу, недостающие числа догружаем
+  function paint() {
+    paintEls();
+    clearTimeout(tm);
+    tm = setTimeout(async () => {
+      await fetchIds($$("[data-plays]").map((e) => e.dataset.plays));
+      paintEls();
+    }, 60);
+  }
+
+  async function load(ids) { await fetchIds(ids); }
+
+  // ---- считаем свои прослушивания ----
+  let cur = { id: null, done: false };
+  au.addEventListener("loadstart", () => { cur = { id: S.nowId, done: false }; });
+  au.addEventListener("ended", () => { cur.done = false; });
+  au.addEventListener("timeupdate", () => {
+    if (until != null || au.paused || !S.nowId) return;
+    if (cur.id !== S.nowId) cur = { id: S.nowId, done: false };
+    const t = track(S.nowId);
+    if (cur.done || !t || au.currentTime < Math.min(10, (t.dur || 20) * 0.5)) return;
+    cur.done = true;
+    if (!c || !me()) return;
+    S.plays[t.id] = (S.plays[t.id] || 0) + 1;
+    known.add(t.id);
+    paintEls();
+    c.rpc("bump_play", { tid: t.id }).then(() => {}, () => {});
+  });
+
+  return { paint, load };
+})();
+
 /* ===== catalog.js ===== */
 // ============================================================
 // Каталог музыки (Audius, бесплатно, без ключа).
 // Файлы песен остаются у них и играют по ссылке, у нас в базе
 // хранится только название и автор тех песен, которыми поделились.
+// Режимы: «Сейчас слушают» (хиты Audius), «В Riff сейчас» (что слушают
+// другие прямо сейчас), «Популярное у нас» (по нашим прослушиваниям).
 // ============================================================
 const Catalog = (() => {
   const API = "https://api.audius.co/v1", APP = "DROPAPP";
-  const GENRES = [["", "Популярное"], ["Electronic", "Электроника"], ["Hip-Hop/Rap", "Хип-хоп"], ["Pop", "Поп"], ["Rock", "Рок"], ["Lo-Fi", "Лоу-фай"], ["Ambient", "Эмбиент"], ["Jazz", "Джаз"], ["R&B/Soul", "R&B"], ["Trap", "Трэп"], ["House", "Хаус"]];
+  const GENRES = [["", "Все жанры"], ["Electronic", "Электроника"], ["Hip-Hop/Rap", "Хип-хоп"], ["Pop", "Поп"], ["Rock", "Рок"], ["Lo-Fi", "Лоу-фай"], ["Ambient", "Эмбиент"], ["Jazz", "Джаз"], ["R&B/Soul", "R&B"], ["Trap", "Трэп"], ["House", "Хаус"]];
+  const MODES = [["now", "Сейчас слушают"], ["live", "В Riff сейчас"], ["top", "Популярное у нас"]];
+  const TIMES = [["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]];
   const persisted = new Set();
-  let lastLoad = 0;
-  S.cat = { q: "", genre: "", items: [], loading: false, err: "", started: false };
+  let lastLoad = 0, hasAid = true;
+  S.cat = { q: "", genre: "", mode: "now", time: "week", items: [], artists: [], live: [], loading: false, err: "", started: false };
 
   const hue = (s) => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
   const streamUrl = (rid) => `${API}/tracks/${encodeURIComponent(rid)}/stream?app_name=${APP}`;
@@ -2344,24 +2455,63 @@ const Catalog = (() => {
     const h = hue(o.id);
     return {
       id: o.id, ext: true, title: o.title, artist: o.artist || "Audius", genre: o.genre || "каталог", dur: o.dur,
+      artist_id: o.artist_id || null, ap: o.ap || 0,
       hot: Math.max(0, Math.min(Math.floor(o.dur * 0.4), o.dur - MOMENT_LEN)),
       src: streamUrl(o.id.slice(3)), cover_url: o.cover_url || null,
       c1: `hsl(${h} 70% 55%)`, c2: `hsl(${(h + 60) % 360} 75% 50%)`,
     };
   }
-  function reg(t) { if (!track(t.id)) TRACKS.push(t); return track(t.id); }
+  function reg(t) {
+    const e = track(t.id);
+    if (e) { if (t.ap) e.ap = t.ap; if (t.artist_id && !e.artist_id) e.artist_id = t.artist_id; return e; }
+    TRACKS.push(t);
+    return track(t.id);
+  }
 
   const fromApi = (r) => reg(make({
     id: "au_" + r.id, title: r.title || "Без названия", artist: r.user && (r.user.name || r.user.handle),
-    genre: r.genre, dur: Math.round(r.duration || 0),
+    genre: r.genre, dur: Math.round(r.duration || 0), artist_id: r.user && r.user.id, ap: r.play_count,
     cover_url: r.artwork && (r.artwork["480x480"] || r.artwork["150x150"] || r.artwork["1000x1000"]),
   }));
 
-  async function get(path) {
+  async function raw(path) {
     const r = await fetch(API + path + (path.includes("?") ? "&" : "?") + "app_name=" + APP);
     if (!r.ok) throw new Error("HTTP " + r.status);
-    const j = await r.json();
-    return (j.data || []).filter((x) => x && x.is_streamable !== false && (x.duration || 0) >= 20);
+    return (await r.json()).data;
+  }
+  async function get(path, minPlays = 0) {
+    const d = await raw(path);
+    return (Array.isArray(d) ? d : []).filter((x) => x && x.is_streamable !== false && (x.duration || 0) >= 20 && (x.play_count == null || x.play_count >= minPlays));
+  }
+
+  const person = (u) => ({
+    id: u.id, name: u.name || u.handle, handle: u.handle, followers: u.follower_count || 0, tracks: u.track_count || 0,
+    pic: u.profile_picture && (u.profile_picture["150x150"] || u.profile_picture["480x480"]),
+  });
+
+  // «В Riff сейчас»: какие песни прямо сейчас слушают другие
+  async function loadLive() {
+    const c = Auth.client;
+    if (!c) return [];
+    const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data, error } = await c.from("profiles").select("id,username,display_name,avatar_url,now_track,now_at").gt("now_at", since).not("now_track", "is", null).limit(60);
+    if (error) throw error;
+    let rows = data || [];
+    if (rows.some((p) => !track(p.now_track))) { await loadAll(true); }
+    const by = {};
+    rows.forEach((p) => { if (track(p.now_track)) (by[p.now_track] = by[p.now_track] || []).push(p); });
+    return Object.entries(by).map(([id, who]) => ({ id, who })).sort((a, b) => b.who.length - a.who.length);
+  }
+
+  // «Популярное у нас»
+  async function loadTop() {
+    const c = Auth.client;
+    if (!c) return [];
+    const { data, error } = await c.rpc("top_played", { lim: 30 });
+    if (error) throw error;
+    await loadAll(true);
+    (data || []).forEach((r) => { S.plays[r.track_id] = Number(r.plays) || 0; });
+    return (data || []).map((r) => r.track_id).filter((id) => track(id));
   }
 
   async function run() {
@@ -2370,13 +2520,24 @@ const Catalog = (() => {
     if (S.view === "tracks") render(true);
     try {
       const q = C.q.trim();
-      const rows = q
-        ? await get(`/tracks/search?query=${encodeURIComponent(q)}&limit=24`)
-        : await get(`/tracks/trending?time=week&limit=24${C.genre ? "&genre=" + encodeURIComponent(C.genre) : ""}`);
-      C.items = rows.map(fromApi).map((t) => t.id);
+      C.artists = []; C.live = [];
+      if (q) {
+        const [rows, us] = await Promise.all([get(`/tracks/search?query=${encodeURIComponent(q)}&limit=24`), raw(`/users/search?query=${encodeURIComponent(q)}&limit=8`).catch(() => [])]);
+        C.items = rows.map(fromApi).map((t) => t.id);
+        C.artists = (Array.isArray(us) ? us : []).filter((u) => (u.track_count || 0) > 0).slice(0, 6).map(person);
+      } else if (C.mode === "live") {
+        C.live = await loadLive();
+        C.items = C.live.map((x) => x.id);
+      } else if (C.mode === "top") {
+        C.items = await loadTop();
+      } else {
+        const rows = await get(`/tracks/trending?time=${C.time}&limit=40${C.genre ? "&genre=" + encodeURIComponent(C.genre) : ""}`, 300);
+        C.items = rows.map(fromApi).map((t) => t.id).slice(0, 30);
+      }
     } catch (e) {
       console.error(e);
-      C.err = "Не получилось подключиться к каталогу. Проверьте интернет и попробуйте ещё раз.";
+      const m = String((e && (e.message || e.code)) || "");
+      C.err = C.mode !== "now" && !C.q.trim() && /function|schema|42883|PGRST/i.test(m) ? "Для этого раздела нужен SQL шага 13." : C.mode === "live" && !C.q.trim() ? "Не получилось загрузить, попробуйте ещё раз." : "Не получилось подключиться к каталогу. Проверьте интернет и попробуйте ещё раз.";
     }
     C.loading = false;
     if (S.view === "tracks") { const f = document.activeElement && document.activeElement.id === "cq"; render(true); if (f) { const q = $("#cq"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } } }
@@ -2387,17 +2548,23 @@ const Catalog = (() => {
     const t = track(id);
     if (!t || !t.ext || persisted.has(id) || !Auth.client || !me()) return;
     persisted.add(id);
-    Auth.client.from("ext_tracks").upsert({ id: t.id, title: t.title, artist: t.artist, cover_url: t.cover_url, dur: t.dur, genre: t.genre }, { onConflict: "id", ignoreDuplicates: true }).then(() => {}, () => {});
+    const row = { id: t.id, title: t.title, artist: t.artist, cover_url: t.cover_url, dur: t.dur, genre: t.genre };
+    const up = (r) => Auth.client.from("ext_tracks").upsert(r, { onConflict: "id", ignoreDuplicates: true });
+    up(hasAid ? { ...row, artist_id: t.artist_id } : row).then((r) => {
+      if (r && r.error && hasAid) { hasAid = false; up(row).then(() => {}, () => {}); }
+    }, () => {});
   }
 
   // Подтянуть песни из каталога, которыми поделились другие
   async function loadAll(force) {
     if (!Auth.client || (!force && Date.now() - lastLoad < 30000)) return;
     lastLoad = Date.now();
-    const { data, error } = await Auth.client.from("ext_tracks").select("id,title,artist,cover_url,dur,genre").order("created_at", { ascending: false }).limit(1000);
-    if (error || !data) return;
+    const q = () => Auth.client.from("ext_tracks").select("id,title,artist,cover_url,dur,genre" + (hasAid ? ",artist_id" : "")).order("created_at", { ascending: false }).limit(1000);
+    let r = await q();
+    if (r.error && hasAid) { hasAid = false; r = await q(); }
+    if (r.error || !r.data) return;
     let added = 0;
-    data.forEach((r) => { persisted.add(r.id); if (!track(r.id) && r.dur >= 5) { reg(make(r)); added++; } });
+    r.data.forEach((x) => { persisted.add(x.id); if (!track(x.id) && x.dur >= 5) { reg(make(x)); added++; } else if (x.artist_id) reg(make(x)); });
     if (added && ["moments", "chats", "rooms", "tracks", "profile", "notifs", "post"].includes(S.view)) render(true);
   }
 
@@ -2415,26 +2582,110 @@ const Catalog = (() => {
     timer = setTimeout(run, 450);
   });
   document.addEventListener("click", (e) => {
-    const g = e.target.closest("[data-cgenre]");
+    const g = e.target.closest("[data-cgenre],[data-cmode],[data-ctime],[data-crefresh]");
     if (!g) return;
-    S.cat.genre = g.dataset.cgenre; S.cat.q = ""; run();
+    const d = g.dataset, C = S.cat;
+    if (d.cgenre !== undefined) { C.genre = d.cgenre; C.mode = "now"; C.q = ""; }
+    if (d.cmode) { C.mode = d.cmode; C.q = ""; }
+    if (d.ctime) { C.time = d.ctime; C.mode = "now"; C.q = ""; }
+    run();
   });
 
-  return { GENRES, run, persist, loadAll, reg };
+  return { GENRES, MODES, TIMES, run, persist, loadAll, reg, raw, fromApi, get, person };
 })();
 
 // Экран «Каталог»
 function viewCatalog() {
   const C = S.cat;
   if (!C.started) setTimeout(() => Catalog.run(), 0);
-  const chips = Catalog.GENRES.map(([k, l]) => `<button class="chip ${!C.q && C.genre === k ? "on" : ""}" data-cgenre="${esc(k)}">${l}</button>`).join("");
+  const searching = !!C.q.trim();
+  const modes = Catalog.MODES.map(([k, l]) => `<button class="chip ${!searching && C.mode === k ? "on" : ""}" data-cmode="${k}">${l}</button>`).join("");
+  const extra = !searching && C.mode === "now"
+    ? `<div class="chips">${Catalog.TIMES.map(([k, l]) => `<button class="chip sm ${C.time === k ? "on" : ""}" data-ctime="${k}">${l}</button>`).join("")}</div>
+       <div class="chips">${Catalog.GENRES.map(([k, l]) => `<button class="chip sm ${C.genre === k ? "on" : ""}" data-cgenre="${esc(k)}">${l}</button>`).join("")}</div>`
+    : "";
+  const hint = searching ? "Результаты поиска" : C.mode === "live" ? "Песни, которые другие слушают в Riff прямо сейчас." : C.mode === "top" ? "Песни, которые чаще всего слушают у нас." : "Хиты из каталога Audius за выбранный период. Играют целиком, место у нас не занимают.";
   const items = C.items.map(track).filter(Boolean);
-  return `<div class="muted small">Песни независимых артистов из каталога Audius. Они играют с их серверов и не занимают место у нас.</div>
+  const who = (id) => { const x = C.live.find((l) => l.id === id); return x ? `<div class="listen">${x.who.slice(0, 5).map((p) => `<button data-profile="${p.id}" title="${esc(p.display_name || p.username)}">${avatar(p, 24)}</button>`).join("")}<span class="muted small">${x.who.length === 1 ? esc(x.who[0].display_name || x.who[0].username) + " слушает" : x.who.length + " слушают"}</span></div>` : ""; };
+  const artists = searching && C.artists.length
+    ? `<h3 class="sec">Исполнители</h3><div class="artrow">${C.artists.map((u) => `<button class="card artchip" data-artist="au:${esc(u.id)}">${avatar({ avatar_url: u.pic, display_name: u.name }, 48)}<b class="ell">${esc(u.name)}</b><span class="muted small">${fmtN(u.followers)} подписчиков</span></button>`).join("")}</div>${items.length ? `<h3 class="sec">Песни</h3>` : ""}`
+    : "";
+  const empty = C.mode === "live" && !searching ? `Сейчас никто не слушает музыку.<br><span class="small">Включи что-нибудь: другие увидят это здесь.</span>` : C.mode === "top" && !searching ? `Пока никто ничего не прослушал.<br><span class="small">Включи песню из каталога: она появится здесь.</span>` : "Ничего не нашли.";
+  return `<div class="muted small">${hint}</div>
     <label class="search">${ICON.search}<input id="cq" placeholder="Название или исполнитель" value="${esc(C.q)}" autocomplete="off"></label>
-    <div class="chips">${chips}</div>
-    ${C.err ? `<div class="alert">${esc(C.err)}<br><button class="btn-s sm" data-cgenre="${esc(C.genre)}">Повторить</button></div>` : ""}
-    ${C.loading ? skeletonPost() : items.length ? items.map(trackCard).join("") : C.started && !C.err ? `<div class="empty">Ничего не нашли.</div>` : ""}`;
+    <div class="chips">${modes}</div>${extra}
+    ${C.err ? `<div class="alert">${esc(C.err)}<br><button class="btn-s sm" data-crefresh="1">Повторить</button></div>` : ""}
+    ${C.loading ? skeletonPost() : artists + (items.length ? items.map((t) => trackCard(t) + (C.mode === "live" && !searching ? who(t.id) : "")).join("") : C.started && !C.err && !C.artists.length ? `<div class="empty">${empty}</div>` : "")}`;
 }
+
+/* ===== artist.js ===== */
+// ============================================================
+// Карточка исполнителя (для песен из каталога Audius):
+// фото, подписчики, описание и самые популярные песни.
+// ============================================================
+S.art = null;
+
+const Artist = (() => {
+  async function open(key) {
+    if (S.sheet) { S.sheet = false; renderSheet(); }
+    if (S.view !== "artist") S.artBack = S.view;
+    S.art = { key, loading: true };
+    S.view = "artist";
+    render();
+    try {
+      let id = key.slice(key.indexOf(":") + 1);
+      if (key.startsWith("q:")) {
+        const found = await Catalog.raw(`/users/search?query=${encodeURIComponent(id)}&limit=1`);
+        if (!found || !found[0]) throw new Error("not found");
+        id = found[0].id;
+      }
+      const [u, rows] = await Promise.all([Catalog.raw(`/users/${encodeURIComponent(id)}`), Catalog.get(`/users/${encodeURIComponent(id)}/tracks?sort=plays&limit=30`)]);
+      if (!u) throw new Error("not found");
+      const ids = rows.map(Catalog.fromApi).map((t) => t.id);
+      rows.forEach((r) => Catalog.persist("au_" + r.id));
+      Plays.load(ids);
+      if (S.art && S.art.key === key) S.art = { key, u, ids };
+    } catch (e) {
+      console.error(e);
+      if (S.art && S.art.key === key) S.art = { key, err: "Не получилось загрузить исполнителя. Проверьте интернет и попробуйте ещё раз." };
+    }
+    if (S.view === "artist") render(true);
+  }
+  return { open };
+})();
+
+function viewArtist() {
+  const a = S.art;
+  const back = `<button class="x back" data-artistback="1" aria-label="Назад">${ICON.back}</button>`;
+  if (!a || a.loading) return back + skeletonPost();
+  if (a.err) return `${back}<div class="alert">${esc(a.err)}<br><button class="btn-s sm" data-artist="${esc(a.key)}">Повторить</button></div>`;
+  const u = a.u, pic = u.profile_picture && (u.profile_picture["480x480"] || u.profile_picture["150x150"]);
+  const ban = u.cover_photo && (u.cover_photo["640x"] || u.cover_photo["2000x"]);
+  const ts = a.ids.map(track).filter(Boolean);
+  const total = ts.reduce((s, t) => s + playsOf(t), 0);
+  const name = u.name || u.handle;
+  return `${back}
+  <section class="card prof" style="--acc:var(--a)">
+    <div class="banner" style="${ban ? `background:url('${esc(ban)}') center/cover` : `background:${coverBg({ c1: ts[0] ? ts[0].c1 : "#7c5cff", c2: ts[0] ? ts[0].c2 : "#ff5ca8" })}`}"></div>
+    <div class="prof-in"><div class="ava-ring">${avatar({ avatar_url: pic, display_name: name }, 88)}</div>
+      <div class="title">${esc(name)}${u.is_verified ? ` <span class="sticker lime">проверен</span>` : ""}</div>
+      <div class="muted">@${esc(u.handle)} · исполнитель</div>
+      ${u.bio ? `<p class="bio">${esc(String(u.bio).slice(0, 300))}</p>` : ""}
+      <div class="stats"><span><b>${fmtN(u.follower_count)}</b> подписчиков</span><span><b>${u.track_count || ts.length}</b> песен</span>${total ? `<span><b>${fmtN(total)}</b> прослушиваний</span>` : ""}</div>
+      <div class="row wrap" style="margin-top:14px">${ts.length ? `<button class="btn-a" data-artistplay="1">${ICON.play.replace('width="22" height="22"', 'width="16" height="16"')} Слушать всё</button>` : ""}<a class="btn-s" href="https://audius.co/${encodeURIComponent(u.handle)}" target="_blank" rel="noopener noreferrer">Страница на Audius</a></div>
+    </div></section>
+  <h3 class="sec">Популярные песни</h3>
+  ${ts.length ? ts.map(trackCard).join("") : `<div class="empty">У исполнителя пока нет песен для прослушивания.</div>`}`;
+}
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-artist],[data-artistback],[data-artistplay]");
+  if (!el) return;
+  const d = el.dataset;
+  if (d.artist) return Artist.open(d.artist);
+  if (d.artistback) { S.view = S.artBack && S.artBack !== "artist" ? S.artBack : "tracks"; return render(true); }
+  if (d.artistplay && S.art && S.art.ids) { S.queue = S.art.ids.slice(); playTrack(S.art.ids[0]); }
+});
 
 /* ===== library.js ===== */
 // ============================================================
@@ -2602,7 +2853,7 @@ function trackCard(t) {
   return `<article class="card track" style="--c1:${t.c1};--c2:${t.c2}">
     <div class="row">
       <button class="cover-btn" data-open="${t.id}" aria-label="Открыть плеер">${cover(t, "big")}</button>
-      <div class="grow"><div class="title">${esc(t.title)}</div><div class="muted">${t.ext ? esc(t.artist) : artistLink(t)}</div><span class="sticker">${esc(t.genre)} · ${fmt(t.dur)}</span></div>
+      <div class="grow"><div class="title">${esc(t.title)}</div><div class="muted">${artistLink(t)}</div><span class="sticker">${esc(t.genre)} · ${fmt(t.dur)}</span> ${playsHtml(t)}</div>
       ${t.user_id && t.user_id === me() ? `<button class="x" data-deltrack="${t.id}" aria-label="Удалить">${ICON.close}</button>` : ""}
       <button class="playbtn" data-play="${t.id}" aria-label="Играть">${ICON.play}${ICON.pause}</button>
     </div>
@@ -2617,7 +2868,7 @@ function viewPlaylist() {
   const ts = p.ids.map(track).filter(Boolean);
   return `<div class="row"><button class="x" data-plback="1" aria-label="Назад">${ICON.back}</button><div class="grow"><div class="title">${esc(p.title)}</div><div class="muted small">Песен: ${p.ids.length}</div></div>
       ${ts.length ? `<button class="btn-a sm" data-plplay="${p.id}">${ICON.play} Слушать</button>` : ""}<button class="x" data-pldel="${p.id}" aria-label="Удалить плейлист">${ico("trash", 18)}</button></div>
-    ${ts.length ? ts.map((t) => `<div class="card frrow"><button class="cover-btn" data-open="${t.id}">${cover(t, "big")}</button><div class="grow who2"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist)}</span></div><button class="playbtn" data-plplayone="${p.id}:${t.id}" aria-label="Играть">${ICON.play}${ICON.pause}</button><button class="x" data-plrm="${p.id}:${t.id}" aria-label="Убрать">${ICON.close}</button></div>`).join("") : `<div class="empty">В плейлисте пока пусто.<br><span class="small">Нажми «В плейлист» у любой песни.</span></div>`}`;
+    ${ts.length ? ts.map((t) => `<div class="card frrow"><button class="cover-btn" data-open="${t.id}">${cover(t, "big")}</button><div class="grow who2"><b>${esc(t.title)}</b><span class="muted small">${artistLink(t)} ${playsHtml(t)}</span></div><button class="playbtn" data-plplayone="${p.id}:${t.id}" aria-label="Играть">${ICON.play}${ICON.pause}</button><button class="x" data-plrm="${p.id}:${t.id}" aria-label="Убрать">${ICON.close}</button></div>`).join("") : `<div class="empty">В плейлисте пока пусто.<br><span class="small">Нажми «В плейлист» у любой песни.</span></div>`}`;
 }
 
 function viewLibrary() {
@@ -3035,17 +3286,18 @@ const Theme = (() => {
 // ============================================================
 // Главный файл: показывает экраны и реагирует на нажатия.
 // ============================================================
-const VIEW = { moments: viewMoments, tracks: viewTracks, chats: viewChats, rooms: viewRooms, profile: viewProfile, me: viewMe, friends: viewFriends, notifs: viewNotifs, post: viewPost };
+const VIEW = { moments: viewMoments, tracks: viewTracks, chats: viewChats, rooms: viewRooms, profile: viewProfile, me: viewMe, friends: viewFriends, notifs: viewNotifs, post: viewPost, artist: viewArtist };
 const unreadTotal = () => Object.values(S.unread).reduce((a, b) => a + b, 0);
 let onInputTimer = null;
 
 function render(keep) {
   const y = window.scrollY;
   $("#nav").innerHTML = TABS.map(([k, l]) =>
-    `<button data-view="${k}" class="${S.view === k || (k === "me" && S.view === "friends") ? "on" : ""}">${ICON[k]}<span>${l}</span>${(k === "chats" && unreadTotal()) || (k === "me" && Friends.incoming().length) ? `<i class="dot"></i>` : ""}</button>`).join("");
+    `<button data-view="${k}" class="${S.view === k || (k === "me" && S.view === "friends") || (k === "tracks" && S.view === "artist") ? "on" : ""}">${ICON[k]}<span>${l}</span>${(k === "chats" && unreadTotal()) || (k === "me" && Friends.incoming().length) ? `<i class="dot"></i>` : ""}</button>`).join("");
   $("#view").innerHTML = VIEW[S.view]();
   sync(true);
   Notifs.paint();
+  Plays.paint();
   if (S.view === "chats" && S.chat.peer) { const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight; }
   window.scrollTo(0, keep ? y : 0);
 }
