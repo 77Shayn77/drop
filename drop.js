@@ -372,9 +372,80 @@ const S = {
 const me = () => (S.auth.user ? S.auth.user.id : null);
 
 // ---------- Звук ----------
-const au = new Audio();
-au.crossOrigin = "anonymous";
-au.preload = "metadata";
+// Настоящий аудио-элемент (для файлов и каталога Audius) и YouTube-плеер
+// прячутся за одним объектом au: остальной код не знает, что играет.
+const aud = new Audio();
+aud.crossOrigin = "anonymous";
+aud.preload = "metadata";
+const au = (() => {
+  const EV = ["play", "pause", "ended", "timeupdate", "loadedmetadata", "loadstart", "seeked", "error", "playing", "canplay", "waiting"];
+  const L = {};
+  let yt = false, ytId = null, ytPlay = false, loaded = false, seekV = 0, seekAt = 0;
+  const o = { startAt: 0 };
+  const emit = (n) => (L[n] || []).slice().forEach((r) => {
+    if (r.once) L[n] = L[n].filter((x) => x !== r);
+    try { r.fn.call(o, { type: n, target: o }); } catch (e) { console.error(e); }
+  });
+  EV.forEach((n) => aud.addEventListener(n, () => { if (!yt) emit(n); }));
+  const Y = () => (typeof Yt !== "undefined" ? Yt : null);
+  const setPlaying = (v) => { if (v !== ytPlay) { ytPlay = v; emit(v ? "play" : "pause"); if (v) emit("playing"); } };
+  setInterval(() => { if (yt && ytPlay) emit("timeupdate"); }, 250);
+
+  // Сюда сообщает YouTube-плеер
+  o._yt = {
+    state(s) {
+      if (!yt) return;
+      if (!loaded && (s === 1 || s === 2 || s === 3 || s === 5)) { loaded = true; emit("loadedmetadata"); }
+      if (s === 1 || s === 3) setPlaying(true);
+      else if (s === 2) setPlaying(false);
+      else if (s === 0) { setPlaying(false); emit("ended"); }
+    },
+    error() { if (!yt) return; setPlaying(false); emit("error"); },
+  };
+
+  Object.defineProperties(o, {
+    src: {
+      get: () => (yt ? "yt:" + ytId : aud.src),
+      set(v) {
+        v = String(v || "");
+        if (v.startsWith("yt:")) {
+          yt = true; ytId = v.slice(3); ytPlay = false; loaded = false;
+          try { aud.pause(); aud.removeAttribute("src"); aud.load(); } catch (e) {}
+          document.body.classList.add("yt-on");
+          const st = o.startAt || 0; o.startAt = 0;
+          emit("loadstart");
+          if (Y()) Y().load(ytId, st);
+        } else {
+          if (yt) { yt = false; ytPlay = false; if (Y()) Y().stop(); document.body.classList.remove("yt-on"); }
+          aud.src = v;
+        }
+      },
+    },
+    paused: { get: () => (yt ? !ytPlay : aud.paused) },
+    ended: { get: () => (yt ? false : aud.ended) },
+    error: { get: () => (yt ? null : aud.error) },
+    readyState: { get: () => (yt ? (loaded ? 4 : 0) : aud.readyState) },
+    duration: { get: () => (yt ? (Y() ? Y().dur() : 0) : aud.duration) },
+    currentTime: {
+      get: () => (yt ? (Date.now() - seekAt < 500 ? seekV : Y() ? Y().time() : 0) : aud.currentTime),
+      set(v) {
+        if (!yt) { aud.currentTime = v; return; }
+        seekV = v; seekAt = Date.now();
+        if (Y()) Y().seek(v);
+        setTimeout(() => emit("seeked"), 0);
+      },
+    },
+    volume: { get: () => aud.volume, set(v) { aud.volume = v; } },
+    crossOrigin: { get: () => aud.crossOrigin, set(v) { aud.crossOrigin = v; } },
+  });
+  o.play = () => { if (yt) { if (Y()) Y().cmd("playVideo"); setPlaying(true); return Promise.resolve(); } return aud.play(); };
+  o.pause = () => { if (yt) { if (Y()) Y().cmd("pauseVideo"); setPlaying(false); } else aud.pause(); };
+  o.load = () => { if (!yt) aud.load(); };
+  o.addEventListener = (n, fn, opts) => { (L[n] = L[n] || []).push({ fn, once: !!(opts && opts.once) }); };
+  o.removeEventListener = (n, fn) => { L[n] = (L[n] || []).filter((r) => r.fn !== fn); };
+  o.isYt = () => yt;
+  return o;
+})();
 let until = null; // секунда, на которой остановиться (для «Момента»)
 let playKey = null; // что именно сейчас играет: "id" или "id:начало"
 
@@ -388,6 +459,7 @@ function startPlayback(id, from, to, key) {
   if (S.nowId !== id) {
     S.nowId = id;
     S.mstart = t.hot;
+    au.startAt = from || 0;
     au.src = t.src;
     au.addEventListener("loadedmetadata", go, { once: true });
     au.load();
@@ -692,11 +764,12 @@ function renderSheet() {
   el.innerHTML = `<div class="sheet-in" style="--c1:${t.c1};--c2:${t.c2}">
     <i class="grab" aria-hidden="true"></i>
     <button class="x close" data-sheetclose="1" aria-label="Закрыть">${ICON.close}</button>
-    <div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>
+    ${t.src && t.src.startsWith("yt:") ? `<div class="ytslot" id="ytslot"></div>` : `<div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>`}
     <div class="center"><div class="title">${esc(t.title)}</div><div class="muted">${artistLink(t)} · ${esc(t.genre)} ${playsHtml(t)}</div></div>
     <div class="wave" id="wave">${hs.map((h, i) => `<b data-i="${i}" style="height:${h}%"></b>`).join("")}</div>
     <div class="times"><span id="sCur">0:00</span><span>${fmt(t.dur)}</span></div>
     <div class="ctrl"><button data-shuffle="1" class="${S.shuffle ? "on" : ""}" aria-label="Вперемешку">${ICON.shuffle}</button><button data-step="-1" aria-label="Назад">${ICON.prev}</button><button class="playbtn big" data-toggle="1" aria-label="Играть">${ICON.play}${ICON.pause}</button><button data-step="1" aria-label="Дальше">${ICON.next}</button><button data-repeat="1" class="${S.repeat ? "on" : ""}" aria-label="Повтор">${S.repeat === 2 ? ICON.repeat1 : ICON.repeat}</button></div>
+    ${t.src && t.src.startsWith("yt:") ? `<div class="muted small">Песни из YouTube: эквалайзер недоступен, громкость работает.</div>` : ""}
     ${soundPanel()}
     <div class="card mpanel">
       <div class="row"><b>${ICON.bolt} Твой момент</b><span class="sticker lime grow-r" id="mLabel"></span></div>
@@ -1574,7 +1647,7 @@ const FX = (() => {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       ctx = new AC();
-      let prev = ctx.createMediaElementSource(au);
+      let prev = ctx.createMediaElementSource(aud);
       filters = BANDS.map(([f], i) => {
         const b = ctx.createBiquadFilter();
         b.type = i === 0 ? "lowshelf" : i === BANDS.length - 1 ? "highshelf" : "peaking";
@@ -1591,7 +1664,7 @@ const FX = (() => {
     }
   }
   function resume() { if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {}); }
-  function setVol(v) { st.vol = clamp(v, 0, 1); if (gain) gain.gain.value = st.vol; else au.volume = st.vol; save(); }
+  function setVol(v) { st.vol = clamp(v, 0, 1); if (gain) gain.gain.value = st.vol; else au.volume = st.vol; if (typeof Yt !== "undefined") Yt.vol(st.vol); save(); }
   function setBand(i, db) { st.eq[i] = clamp(db, -12, 12); if (filters[i]) filters[i].gain.value = st.eq[i]; save(); }
   function setAll(arr) { arr.forEach((v, i) => setBand(i, v)); }
 
@@ -1883,7 +1956,7 @@ function commentsBox(m) {
   return h + `<div class="cmbox">${list}<form class="cmform" id="cmForm" data-mid="${m.id}"><input name="text" placeholder="Написать комментарий…" maxlength="500" autocomplete="off"><button class="send" aria-label="Отправить">${ICON.send}</button></form></div>`;
 }
 
-const artistLink = (t) => (t.user_id ? `<button class="alink" data-profile="${t.user_id}">${esc(t.artist)}</button>` : t.ext && t.artist && t.artist !== "Audius" ? `<button class="alink" data-artist="${t.artist_id ? "au:" + esc(t.artist_id) : "q:" + esc(t.artist)}">${esc(t.artist)}</button>` : esc(t.artist));
+const artistLink = (t) => (t.user_id ? `<button class="alink" data-profile="${t.user_id}">${esc(t.artist)}</button>` : t.ext && t.id.startsWith("yt_") ? `<button class="alink" data-artist="y:${esc(t.artist)}">${esc(t.artist)}</button>` : t.ext && t.artist && t.artist !== "Audius" ? `<button class="alink" data-artist="${t.artist_id ? "au:" + esc(t.artist_id) : "q:" + esc(t.artist)}">${esc(t.artist)}</button>` : esc(t.artist));
 
 const listsLocked = (p) => {
   const pol = p.lists_policy || "all";
@@ -2355,6 +2428,175 @@ const ChatMedia = (() => {
   return { sendFile };
 })();
 
+/* ===== ytplayer.js ===== */
+// ============================================================
+// Встроенный плеер YouTube (для полных песен популярных артистов).
+// Работает только через официальный плеер YouTube: он должен быть виден,
+// поэтому показывается в большом плеере или маленьким окошком над мини-плеером.
+// ============================================================
+const Yt = (() => {
+  let p = null, ready = false, loading = null, pend = null, box = null;
+
+  function ensure() {
+    if (loading) return loading;
+    loading = new Promise((res) => {
+      box = document.createElement("div");
+      box.id = "ytbox";
+      box.innerHTML = '<div id="ytp"></div>';
+      document.body.appendChild(box);
+      const make = () => {
+        p = new YT.Player("ytp", {
+          width: "100%", height: "100%",
+          playerVars: { playsinline: 1, rel: 0, modestbranding: 1, origin: location.origin },
+          events: {
+            onReady: () => { ready = true; res(p); },
+            onStateChange: (e) => au._yt.state(e.data),
+            onError: (e) => {
+              toast(e.data === 101 || e.data === 150 ? "Автор запретил проигрывание этой песни вне YouTube" : "Эта песня не загружается");
+              au._yt.error();
+            },
+          },
+        });
+      };
+      if (window.YT && window.YT.Player) make();
+      else {
+        window.onYouTubeIframeAPIReady = make;
+        const s = document.createElement("script");
+        s.src = "https://www.youtube.com/iframe_api";
+        s.onerror = () => { loading = null; toast("Не получилось подключить YouTube"); };
+        document.head.appendChild(s);
+      }
+    });
+    setInterval(place, 250);
+    return loading;
+  }
+
+  function load(id, start) {
+    pend = { id, start };
+    const go = () => {
+      if (!pend || pend.id !== id) return;
+      const s = pend.start; pend = null;
+      p.loadVideoById({ videoId: id, startSeconds: s || 0 });
+      vol(typeof FX !== "undefined" ? FX.vol() : 1);
+    };
+    if (ready) go(); else ensure().then(go);
+  }
+
+  const cmd = (n) => { if (ready && p && p[n]) try { p[n](); } catch (e) {} };
+  const time = () => { try { return (ready && p.getCurrentTime && p.getCurrentTime()) || 0; } catch (e) { return 0; } };
+  const dur = () => { try { return (ready && p.getDuration && p.getDuration()) || 0; } catch (e) { return 0; } };
+  const seek = (v) => { if (ready && p) try { p.seekTo(v, true); } catch (e) {} };
+  const vol = (v) => { if (ready && p) try { p.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); } catch (e) {} };
+  const stop = () => { pend = null; cmd("stopVideo"); };
+
+  // Большой плеер: ставим видео на отведённое место. Иначе плавает над мини-плеером.
+  function place() {
+    if (!box) return;
+    const slot = $("#ytslot");
+    if (S.sheet && slot) {
+      const r = slot.getBoundingClientRect();
+      box.classList.add("big");
+      box.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`;
+    } else if (box.classList.contains("big")) {
+      box.classList.remove("big");
+      box.style.cssText = "";
+    }
+  }
+
+  return { ensure, load, cmd, time, dur, seek, vol, stop, place };
+})();
+
+/* ===== ytapi.js ===== */
+// ============================================================
+// Поиск песен на YouTube (официальный бесплатный интерфейс YouTube Data API).
+// Нужен ключ в config.js (ytKey). Результаты поиска запоминаются в базе
+// (таблица yt_cache), чтобы не тратить дневной лимит ключа.
+// ============================================================
+const YtApi = (() => {
+  const key = () => (window.DROP_CONFIG && window.DROP_CONFIG.ytKey) || "";
+  const enabled = () => !!key();
+  const ID = /^[A-Za-z0-9_-]{11}$/;
+  const H = 3600 * 1000;
+
+  async function call(ep, params) {
+    const u = new URL("https://www.googleapis.com/youtube/v3/" + ep);
+    Object.entries({ ...params, key: key() }).forEach(([k, v]) => u.searchParams.set(k, v));
+    const r = await fetch(u);
+    if (!r.ok) {
+      const j = await r.json().catch(() => null);
+      const e = new Error((j && j.error && j.error.message) || "HTTP " + r.status);
+      e.reason = j && j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason;
+      e.status = r.status;
+      throw e;
+    }
+    return r.json();
+  }
+
+  const seconds = (iso) => { const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso || ""); return m ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : 0; };
+
+  // «Артист - Песня (Official Video)» -> артист и название отдельно
+  function parse(v) {
+    const sn = v.snippet || {};
+    let title = sn.title || "", artist = (sn.channelTitle || "").replace(/\s*-\s*Topic$/i, "").replace(/VEVO$/i, "").replace(/\s*(official|channel|music)$/i, "").trim();
+    const m = title.match(/^(.{2,60}?)\s+[-–—]\s+(.+)$/);
+    if (m) { artist = m[1].trim(); title = m[2]; }
+    title = title.replace(/\s*[\(\[][^\)\]]*(official|video|audio|lyric|clip|клип|премьера|mood|visuali[sz]er|4k|hd|live)[^\)\]]*[\)\]]/gi, "").replace(/\s*\|.*$/, "").replace(/\s+/g, " ").trim();
+    const th = sn.thumbnails || {};
+    return {
+      id: "yt_" + v.id, title: title || sn.title || "Без названия", artist: artist || "YouTube", genre: "YouTube",
+      dur: seconds(v.contentDetails && v.contentDetails.duration),
+      cover_url: (th.medium || th.high || th.default || {}).url || null,
+      ap: Number((v.statistics && v.statistics.viewCount) || 0),
+    };
+  }
+
+  // Подробности по списку id: длина, можно ли встраивать, просмотры
+  async function details(ids) {
+    ids = ids.filter((i) => ID.test(i));
+    if (!ids.length) return [];
+    const d = await call("videos", { part: "snippet,contentDetails,statistics,status", id: ids.join(","), maxResults: 50 });
+    return usable(d.items || []);
+  }
+  const usable = (items) => items.filter((v) => v.status && v.status.embeddable !== false && v.status.privacyStatus !== "private").map(parse).filter((t) => t.dur >= 60 && t.dur <= 720);
+
+  // Общий кэш в базе: один запрос на всех
+  async function cached(k, ttl, fetcher) {
+    const c = Auth.client;
+    if (c) {
+      try {
+        const r = await c.from("yt_cache").select("data,at").eq("key", k).maybeSingle();
+        if (r.data && Date.now() - new Date(r.data.at).getTime() < ttl && Array.isArray(r.data.data)) {
+          return r.data.data.filter((t) => t && typeof t.id === "string" && ID.test(t.id.slice(3)));
+        }
+      } catch (e) {}
+    }
+    const data = await fetcher();
+    if (c && me() && data.length) c.from("yt_cache").upsert({ key: k, data, at: new Date().toISOString() }).then(() => {}, () => {});
+    return data;
+  }
+
+  const chart = (region) => cached("c:" + region, 6 * H, async () => {
+    const d = await call("videos", { part: "snippet,contentDetails,statistics,status", chart: "mostPopular", videoCategoryId: "10", regionCode: region, maxResults: 50 });
+    return usable(d.items || []);
+  });
+
+  const search = (q) => {
+    q = q.trim().toLowerCase().slice(0, 80);
+    return cached("s:" + q, 72 * H, async () => {
+      const s = await call("search", { part: "snippet", type: "video", videoCategoryId: "10", videoEmbeddable: "true", maxResults: 25, regionCode: "RU", relevanceLanguage: "ru", q });
+      return details((s.items || []).map((i) => i.id && i.id.videoId));
+    });
+  };
+
+  const friendly = (e) => (e && (e.reason === "quotaExceeded" || e.status === 429)
+    ? "На сегодня лимит запросов к YouTube закончился. Завтра заработает снова, а пока доступны уже найденные песни и «Независимые»."
+    : e && (e.status === 400 || e.status === 403)
+      ? "YouTube не принял ключ. Проверьте ключ в config.js и его ограничения в Google."
+      : "Не получилось подключиться к YouTube. Проверьте интернет и попробуйте ещё раз.");
+
+  return { enabled, chart, search, friendly };
+})();
+
 /* ===== plays.js ===== */
 // ============================================================
 // Прослушивания. Считаем, когда человек послушал песню хотя бы 10 секунд
@@ -2442,11 +2684,12 @@ const Plays = (() => {
 const Catalog = (() => {
   const API = "https://api.audius.co/v1", APP = "DROPAPP";
   const GENRES = [["", "Все жанры"], ["Electronic", "Электроника"], ["Hip-Hop/Rap", "Хип-хоп"], ["Pop", "Поп"], ["Rock", "Рок"], ["Lo-Fi", "Лоу-фай"], ["Ambient", "Эмбиент"], ["Jazz", "Джаз"], ["R&B/Soul", "R&B"], ["Trap", "Трэп"], ["House", "Хаус"]];
-  const MODES = [["now", "Сейчас слушают"], ["live", "В Riff сейчас"], ["top", "Популярное у нас"]];
+  const MODES = [["ru", "Хиты России"], ["world", "Хиты мира"], ["live", "В Riff сейчас"], ["top", "Популярное у нас"], ["now", "Независимые"]];
+  const modes = () => MODES.filter(([k]) => YtApi.enabled() || (k !== "ru" && k !== "world"));
   const TIMES = [["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]];
   const persisted = new Set();
   let lastLoad = 0, hasAid = true;
-  S.cat = { q: "", genre: "", mode: "now", time: "week", items: [], artists: [], live: [], loading: false, err: "", started: false };
+  S.cat = { q: "", genre: "", mode: YtApi.enabled() ? "ru" : "now", time: "week", items: [], items2: [], artists: [], live: [], loading: false, err: "", started: false };
 
   const hue = (s) => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
   const streamUrl = (rid) => `${API}/tracks/${encodeURIComponent(rid)}/stream?app_name=${APP}`;
@@ -2457,7 +2700,7 @@ const Catalog = (() => {
       id: o.id, ext: true, title: o.title, artist: o.artist || "Audius", genre: o.genre || "каталог", dur: o.dur,
       artist_id: o.artist_id || null, ap: o.ap || 0,
       hot: Math.max(0, Math.min(Math.floor(o.dur * 0.4), o.dur - MOMENT_LEN)),
-      src: streamUrl(o.id.slice(3)), cover_url: o.cover_url || null,
+      src: o.id.startsWith("yt_") ? "yt:" + o.id.slice(3) : streamUrl(o.id.slice(3)), cover_url: o.cover_url || null,
       c1: `hsl(${h} 70% 55%)`, c2: `hsl(${(h + 60) % 360} 75% 50%)`,
     };
   }
@@ -2520,11 +2763,20 @@ const Catalog = (() => {
     if (S.view === "tracks") render(true);
     try {
       const q = C.q.trim();
-      C.artists = []; C.live = [];
+      C.artists = []; C.live = []; C.items2 = [];
+      const regYt = (rows) => rows.map((r) => reg(make(r))).map((t) => t.id);
       if (q) {
-        const [rows, us] = await Promise.all([get(`/tracks/search?query=${encodeURIComponent(q)}&limit=24`), raw(`/users/search?query=${encodeURIComponent(q)}&limit=8`).catch(() => [])]);
-        C.items = rows.map(fromApi).map((t) => t.id);
+        const jobs = [get(`/tracks/search?query=${encodeURIComponent(q)}&limit=16`, 0).catch(() => []), raw(`/users/search?query=${encodeURIComponent(q)}&limit=8`).catch(() => [])];
+        let yrows = [], yerr = null;
+        if (YtApi.enabled()) { try { yrows = await YtApi.search(q); } catch (e) { yerr = e; } }
+        const [rows, us] = await Promise.all(jobs);
+        C.items = regYt(yrows);
+        C.items2 = rows.map(fromApi).map((t) => t.id);
         C.artists = (Array.isArray(us) ? us : []).filter((u) => (u.track_count || 0) > 0).slice(0, 6).map(person);
+        if (yerr && !C.items2.length) throw yerr;
+        if (yerr) C.note = YtApi.friendly(yerr); else C.note = "";
+      } else if (C.mode === "ru" || C.mode === "world") {
+        C.items = regYt(await YtApi.chart(C.mode === "ru" ? "RU" : "US"));
       } else if (C.mode === "live") {
         C.live = await loadLive();
         C.items = C.live.map((x) => x.id);
@@ -2537,7 +2789,7 @@ const Catalog = (() => {
     } catch (e) {
       console.error(e);
       const m = String((e && (e.message || e.code)) || "");
-      C.err = C.mode !== "now" && !C.q.trim() && /function|schema|42883|PGRST/i.test(m) ? "Для этого раздела нужен SQL шага 13." : C.mode === "live" && !C.q.trim() ? "Не получилось загрузить, попробуйте ещё раз." : "Не получилось подключиться к каталогу. Проверьте интернет и попробуйте ещё раз.";
+      if (e && (e.reason || e.status)) C.err = YtApi.friendly(e); else C.err = C.mode !== "now" && !C.q.trim() && /function|schema|42883|PGRST/i.test(m) ? "Для этого раздела нужен SQL шага 13." : C.mode === "live" && !C.q.trim() ? "Не получилось загрузить, попробуйте ещё раз." : "Не получилось подключиться к каталогу. Проверьте интернет и попробуйте ещё раз.";
     }
     C.loading = false;
     if (S.view === "tracks") { const f = document.activeElement && document.activeElement.id === "cq"; render(true); if (f) { const q = $("#cq"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } } }
@@ -2591,7 +2843,7 @@ const Catalog = (() => {
     run();
   });
 
-  return { GENRES, MODES, TIMES, run, persist, loadAll, reg, raw, fromApi, get, person };
+  return { make, GENRES, MODES, modes, TIMES, run, persist, loadAll, reg, raw, fromApi, get, person };
 })();
 
 // Экран «Каталог»
@@ -2599,23 +2851,32 @@ function viewCatalog() {
   const C = S.cat;
   if (!C.started) setTimeout(() => Catalog.run(), 0);
   const searching = !!C.q.trim();
-  const modes = Catalog.MODES.map(([k, l]) => `<button class="chip ${!searching && C.mode === k ? "on" : ""}" data-cmode="${k}">${l}</button>`).join("");
+  const modes = Catalog.modes().map(([k, l]) => `<button class="chip ${!searching && C.mode === k ? "on" : ""}" data-cmode="${k}">${l}</button>`).join("");
   const extra = !searching && C.mode === "now"
     ? `<div class="chips">${Catalog.TIMES.map(([k, l]) => `<button class="chip sm ${C.time === k ? "on" : ""}" data-ctime="${k}">${l}</button>`).join("")}</div>
        <div class="chips">${Catalog.GENRES.map(([k, l]) => `<button class="chip sm ${C.genre === k ? "on" : ""}" data-cgenre="${esc(k)}">${l}</button>`).join("")}</div>`
     : "";
-  const hint = searching ? "Результаты поиска" : C.mode === "live" ? "Песни, которые другие слушают в Riff прямо сейчас." : C.mode === "top" ? "Песни, которые чаще всего слушают у нас." : "Хиты из каталога Audius за выбранный период. Играют целиком, место у нас не занимают.";
-  const items = C.items.map(track).filter(Boolean);
+  const hint = searching ? "Результаты поиска" : C.mode === "ru" ? "Самые популярные клипы и песни в России сейчас. Играют целиком через YouTube." : C.mode === "world" ? "Самое популярное в мире сейчас. Играют целиком через YouTube." : C.mode === "live" ? "Песни, которые другие слушают в Riff прямо сейчас." : C.mode === "top" ? "Песни, которые чаще всего слушают у нас." : "Независимые исполнители с Audius. Играют целиком, место у нас не занимают.";
+  const items = C.items.map(track).filter(Boolean), items2 = (C.items2 || []).map(track).filter(Boolean);
   const who = (id) => { const x = C.live.find((l) => l.id === id); return x ? `<div class="listen">${x.who.slice(0, 5).map((p) => `<button data-profile="${p.id}" title="${esc(p.display_name || p.username)}">${avatar(p, 24)}</button>`).join("")}<span class="muted small">${x.who.length === 1 ? esc(x.who[0].display_name || x.who[0].username) + " слушает" : x.who.length + " слушают"}</span></div>` : ""; };
   const artists = searching && C.artists.length
-    ? `<h3 class="sec">Исполнители</h3><div class="artrow">${C.artists.map((u) => `<button class="card artchip" data-artist="au:${esc(u.id)}">${avatar({ avatar_url: u.pic, display_name: u.name }, 48)}<b class="ell">${esc(u.name)}</b><span class="muted small">${fmtN(u.followers)} подписчиков</span></button>`).join("")}</div>${items.length ? `<h3 class="sec">Песни</h3>` : ""}`
+    ? `<h3 class="sec">Исполнители</h3><div class="artrow">${C.artists.map((u) => `<button class="card artchip" data-artist="au:${esc(u.id)}">${avatar({ avatar_url: u.pic, display_name: u.name }, 48)}<b class="ell">${esc(u.name)}</b><span class="muted small">${fmtN(u.followers)} подписчиков</span></button>`).join("")}</div>`
     : "";
   const empty = C.mode === "live" && !searching ? `Сейчас никто не слушает музыку.<br><span class="small">Включи что-нибудь: другие увидят это здесь.</span>` : C.mode === "top" && !searching ? `Пока никто ничего не прослушал.<br><span class="small">Включи песню из каталога: она появится здесь.</span>` : "Ничего не нашли.";
+  let body = "";
+  if (C.loading) body = skeletonPost();
+  else if (searching) {
+    body = items.map(trackCard).join("");
+    if (items2.length || C.artists.length) body += `<h3 class="sec">Независимые</h3>` + artists + items2.map(trackCard).join("");
+    if (!items.length && !items2.length && !C.artists.length && C.started && !C.err) body = `<div class="empty">${empty}</div>`;
+  } else if (items.length) body = items.map((t) => trackCard(t) + (C.mode === "live" ? who(t.id) : "")).join("");
+  else if (C.started && !C.err) body = `<div class="empty">${empty}</div>`;
   return `<div class="muted small">${hint}</div>
     <label class="search">${ICON.search}<input id="cq" placeholder="Название или исполнитель" value="${esc(C.q)}" autocomplete="off"></label>
     <div class="chips">${modes}</div>${extra}
     ${C.err ? `<div class="alert">${esc(C.err)}<br><button class="btn-s sm" data-crefresh="1">Повторить</button></div>` : ""}
-    ${C.loading ? skeletonPost() : artists + (items.length ? items.map((t) => trackCard(t) + (C.mode === "live" && !searching ? who(t.id) : "")).join("") : C.started && !C.err && !C.artists.length ? `<div class="empty">${empty}</div>` : "")}`;
+    ${!C.err && C.note ? `<div class="alert">${esc(C.note)}</div>` : ""}
+    ${body}`;
 }
 
 /* ===== artist.js ===== */
@@ -2625,6 +2886,8 @@ function viewCatalog() {
 // ============================================================
 S.art = null;
 
+const reg2 = (r) => Catalog.reg(Catalog.make(r)).id;
+
 const Artist = (() => {
   async function open(key) {
     if (S.sheet) { S.sheet = false; renderSheet(); }
@@ -2633,6 +2896,15 @@ const Artist = (() => {
     S.view = "artist";
     render();
     try {
+      if (key.startsWith("y:")) {
+        const name = key.slice(2);
+        const rows = (await YtApi.search(name)).filter((r) => r.artist.toLowerCase().includes(name.toLowerCase().slice(0, 12)) || true);
+        const ids = rows.map((r) => reg2(r));
+        Plays.load(ids);
+        if (S.art && S.art.key === key) S.art = { key, yt: true, name, ids };
+        if (S.view === "artist") render(true);
+        return;
+      }
       let id = key.slice(key.indexOf(":") + 1);
       if (key.startsWith("q:")) {
         const found = await Catalog.raw(`/users/search?query=${encodeURIComponent(id)}&limit=1`);
@@ -2659,6 +2931,19 @@ function viewArtist() {
   const back = `<button class="x back" data-artistback="1" aria-label="Назад">${ICON.back}</button>`;
   if (!a || a.loading) return back + skeletonPost();
   if (a.err) return `${back}<div class="alert">${esc(a.err)}<br><button class="btn-s sm" data-artist="${esc(a.key)}">Повторить</button></div>`;
+  if (a.yt) {
+    const ts = a.ids.map(track).filter(Boolean), total = ts.reduce((s, t) => s + playsOf(t), 0);
+    return `${back}
+    <section class="card prof" style="--acc:var(--a)">
+      <div class="banner" style="background:${coverBg({ c1: ts[0] ? ts[0].c1 : "#7c5cff", c2: ts[0] ? ts[0].c2 : "#ff5ca8" })}"></div>
+      <div class="prof-in"><div class="ava-ring">${avatar({ avatar_url: ts[0] && ts[0].cover_url, display_name: a.name }, 88)}</div>
+        <div class="title">${esc(a.name)}</div><div class="muted">исполнитель · YouTube</div>
+        <div class="stats"><span><b>${ts.length}</b> песен найдено</span>${total ? `<span><b>${fmtN(total)}</b> просмотров</span>` : ""}</div>
+        <div class="row wrap" style="margin-top:14px">${ts.length ? `<button class="btn-a" data-artistplay="1">${ICON.play.replace('width="22" height="22"', 'width="16" height="16"')} Слушать всё</button>` : ""}<a class="btn-s" href="https://www.youtube.com/results?search_query=${encodeURIComponent(a.name)}" target="_blank" rel="noopener noreferrer">Искать на YouTube</a></div>
+      </div></section>
+    <h3 class="sec">Песни</h3>
+    ${ts.length ? ts.map(trackCard).join("") : `<div class="empty">Ничего не нашли.</div>`}`;
+  }
   const u = a.u, pic = u.profile_picture && (u.profile_picture["480x480"] || u.profile_picture["150x150"]);
   const ban = u.cover_photo && (u.cover_photo["640x"] || u.cover_photo["2000x"]);
   const ts = a.ids.map(track).filter(Boolean);
