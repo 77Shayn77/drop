@@ -2557,7 +2557,13 @@ const YtApi = (() => {
     const d = await call("videos", { part: "snippet,contentDetails,statistics,status", id: ids.join(","), maxResults: 50 });
     return usable(d.items || []);
   }
-  const usable = (items) => items.filter((v) => v.status && v.status.embeddable !== false && v.status.privacyStatus !== "private").map(parse).filter((t) => t.dur >= 60 && t.dur <= 720);
+  // Только музыка: категория «Музыка», нормальная длина, без интервью, обзоров, подкастов и подборок
+  const NOT_MUSIC = /(интервью|подкаст|podcast|реакци|reaction|обзор|review|стрим|livestream|трейлер|trailer|behind the scenes|making of|как снимал|tutorial|урок|караоке|karaoke|full album|полный альбом|\d+\s*(час|hour|hrs)|сборник|подборка|compilation|mix\b|микс|shorts|концерт целиком|full concert|новости|news|vlog|влог|эфир|выпуск)/i;
+  const usable = (items) => items
+    .filter((v) => v.status && v.status.embeddable !== false && v.status.privacyStatus !== "private")
+    .filter((v) => !v.snippet || !v.snippet.categoryId || v.snippet.categoryId === "10")
+    .filter((v) => v.snippet && v.snippet.liveBroadcastContent !== "live" && !NOT_MUSIC.test(v.snippet.title || ""))
+    .map(parse).filter((t) => t.dur >= 90 && t.dur <= 600);
 
   // Общий кэш в базе: один запрос на всех
   async function cached(k, ttl, fetcher) {
@@ -2575,14 +2581,14 @@ const YtApi = (() => {
     return data;
   }
 
-  const chart = (region) => cached("c:" + region, 6 * H, async () => {
+  const chart = (region) => cached("c2:" + region, 6 * H, async () => {
     const d = await call("videos", { part: "snippet,contentDetails,statistics,status", chart: "mostPopular", videoCategoryId: "10", regionCode: region, maxResults: 50 });
     return usable(d.items || []);
   });
 
   const search = (q) => {
     q = q.trim().toLowerCase().slice(0, 80);
-    return cached("s:" + q, 72 * H, async () => {
+    return cached("s2:" + q, 72 * H, async () => {
       const s = await call("search", { part: "snippet", type: "video", videoCategoryId: "10", videoEmbeddable: "true", maxResults: 25, regionCode: "RU", relevanceLanguage: "ru", q });
       return details((s.items || []).map((i) => i.id && i.id.videoId));
     });
@@ -2760,7 +2766,7 @@ const Catalog = (() => {
   async function run() {
     const C = S.cat;
     C.loading = true; C.err = ""; C.started = true;
-    if (S.view === "tracks") render(true);
+    paint();
     try {
       const q = C.q.trim();
       C.artists = []; C.live = []; C.items2 = [];
@@ -2792,7 +2798,19 @@ const Catalog = (() => {
       if (e && (e.reason || e.status)) C.err = YtApi.friendly(e); else C.err = C.mode !== "now" && !C.q.trim() && /function|schema|42883|PGRST/i.test(m) ? "Для этого раздела нужен SQL шага 13." : C.mode === "live" && !C.q.trim() ? "Не получилось загрузить, попробуйте ещё раз." : "Не получилось подключиться к каталогу. Проверьте интернет и попробуйте ещё раз.";
     }
     C.loading = false;
-    if (S.view === "tracks") { const f = document.activeElement && document.activeElement.id === "cq"; render(true); if (f) { const q = $("#cq"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } } }
+    paint();
+  }
+
+  // Перерисовываем только список под поиском: поле ввода и фокус не трогаем
+  function paint() {
+    if (S.view !== "tracks" || S.tt !== "catalog") return;
+    const m = $("#cmeta"), r = $("#cres");
+    if (!m || !r) return render(true);
+    const h = viewCatalog.parts();
+    m.innerHTML = h.meta;
+    r.innerHTML = h.body;
+    r.classList.toggle("busy", S.cat.loading && !!S.cat.items.length);
+    if (typeof Plays !== "undefined") Plays.paint();
   }
 
   // Запоминаем в базе только название (чтобы друзья тоже увидели песню)
@@ -2843,13 +2861,12 @@ const Catalog = (() => {
     run();
   });
 
-  return { make, GENRES, MODES, modes, TIMES, run, persist, loadAll, reg, raw, fromApi, get, person };
+  return { paint, make, GENRES, MODES, modes, TIMES, run, persist, loadAll, reg, raw, fromApi, get, person };
 })();
 
 // Экран «Каталог»
-function viewCatalog() {
+function viewCatalogParts() {
   const C = S.cat;
-  if (!C.started) setTimeout(() => Catalog.run(), 0);
   const searching = !!C.q.trim();
   const modes = Catalog.modes().map(([k, l]) => `<button class="chip ${!searching && C.mode === k ? "on" : ""}" data-cmode="${k}">${l}</button>`).join("");
   const extra = !searching && C.mode === "now"
@@ -2864,19 +2881,27 @@ function viewCatalog() {
     : "";
   const empty = C.mode === "live" && !searching ? `Сейчас никто не слушает музыку.<br><span class="small">Включи что-нибудь: другие увидят это здесь.</span>` : C.mode === "top" && !searching ? `Пока никто ничего не прослушал.<br><span class="small">Включи песню из каталога: она появится здесь.</span>` : "Ничего не нашли.";
   let body = "";
-  if (C.loading) body = skeletonPost();
+  if (C.loading && !items.length && !items2.length) body = skeletonPost();
   else if (searching) {
     body = items.map(trackCard).join("");
     if (items2.length || C.artists.length) body += `<h3 class="sec">Независимые</h3>` + artists + items2.map(trackCard).join("");
-    if (!items.length && !items2.length && !C.artists.length && C.started && !C.err) body = `<div class="empty">${empty}</div>`;
+    if (!items.length && !items2.length && !C.artists.length && C.started && !C.err && !C.loading) body = `<div class="empty">${empty}</div>`;
   } else if (items.length) body = items.map((t) => trackCard(t) + (C.mode === "live" ? who(t.id) : "")).join("");
-  else if (C.started && !C.err) body = `<div class="empty">${empty}</div>`;
-  return `<div class="muted small">${hint}</div>
-    <label class="search">${ICON.search}<input id="cq" placeholder="Название или исполнитель" value="${esc(C.q)}" autocomplete="off"></label>
-    <div class="chips">${modes}</div>${extra}
+  else if (C.started && !C.err && !C.loading) body = `<div class="empty">${empty}</div>`;
+  const meta = `<div class="muted small">${hint}</div><div class="chips">${modes}</div>${extra}
     ${C.err ? `<div class="alert">${esc(C.err)}<br><button class="btn-s sm" data-crefresh="1">Повторить</button></div>` : ""}
-    ${!C.err && C.note ? `<div class="alert">${esc(C.note)}</div>` : ""}
-    ${body}`;
+    ${!C.err && C.note ? `<div class="alert">${esc(C.note)}</div>` : ""}`;
+  return { meta, body };
+}
+viewCatalog.parts = viewCatalogParts;
+
+// Экран «Каталог»: поле поиска стоит отдельно, под ним обновляются только подсказка и список
+function viewCatalog() {
+  const C = S.cat;
+  if (!C.started) setTimeout(() => Catalog.run(), 0);
+  const h = viewCatalogParts();
+  return `<label class="search">${ICON.search}<input id="cq" placeholder="Название или исполнитель" value="${esc(C.q)}" autocomplete="off"></label>
+    <div id="cmeta">${h.meta}</div><div id="cres">${h.body}</div>`;
 }
 
 /* ===== artist.js ===== */
