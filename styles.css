@@ -542,3 +542,20 @@ body.yt-on #ytbox { display: block; }
 .ytslot { align-self: center; width: min(520px, 100%); aspect-ratio: 16 / 9; border-radius: 22px; background: #000; }
 @media (max-width: 760px) { #ytbox { bottom: calc(146px + env(safe-area-inset-bottom)); } }
 #cres.busy { opacity: 0.5; transition: opacity 0.2s; pointer-events: none; }
+
+/* ---------- Видео закреплено, текст песни ---------- */
+.sheet.has-yt { overflow: hidden; }
+.sheet-in.yt { height: 100dvh; padding-bottom: 0; overflow: hidden; }
+.sheet-in.yt .sbody { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: calc(40px + env(safe-area-inset-bottom)); overscroll-behavior: contain; scrollbar-width: none; }
+.sheet-in.yt .sbody::-webkit-scrollbar { display: none; }
+@media (min-width: 801px) { .sheet-in.yt { height: calc(100dvh - 56px); } }
+.lyr { display: flex; flex-direction: column; gap: 10px; }
+.lyr-box { height: 240px; overflow-y: auto; scrollbar-width: none; padding: 80px 4px; display: flex; flex-direction: column; gap: 14px; -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); overscroll-behavior: contain; }
+.lyr-box::-webkit-scrollbar { display: none; }
+.lyr-box p { margin: 0; font-size: 20px; line-height: 1.25; font-weight: 800; color: var(--mu); cursor: pointer; transition: color 0.25s, transform 0.25s; transform-origin: left center; }
+.lyr-box p.past { color: color-mix(in srgb, var(--mu) 70%, transparent); }
+.lyr-box p.on { color: var(--tx); transform: scale(1.06); }
+.lyr-box.plain { height: auto; max-height: 300px; padding: 0; display: block; font-size: 15px; line-height: 1.6; color: var(--tx); -webkit-mask-image: none; mask-image: none; }
+.lyr-sh { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--mu); }
+.lyr-sh button { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: transparent; color: var(--tx); font-size: 16px; line-height: 1; }
+.sheet-in.yt .sbody > * { flex-shrink: 0; }

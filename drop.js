@@ -466,6 +466,7 @@ function startPlayback(id, from, to, key) {
   } else if (au.readyState > 0) go();
   else au.addEventListener("loadedmetadata", go, { once: true });
   sync(true);
+  if (S.sheet && S.sheetFor !== id) renderSheet(); // открыт большой плеер: показываем новую песню
   if (typeof DB !== "undefined") DB.setNow(id, me());
   if (typeof Catalog !== "undefined") Catalog.persist(id);
 }
@@ -756,20 +757,19 @@ const WAVE_N = 64;
 function renderSheet() {
   const el = $("#sheet");
   const t = track(S.nowId);
-  if (!S.sheet || !t) { el.hidden = true; el.innerHTML = ""; document.body.classList.remove("noscroll"); return; }
+  if (!S.sheet || !t) { el.hidden = true; el.innerHTML = ""; S.sheetFor = null; document.body.classList.remove("noscroll"); return; }
   document.body.classList.add("noscroll");
   el.hidden = false;
+  S.sheetFor = t.id;
   const hs = waveHeights(t.id, WAVE_N);
   const max = Math.max(1, t.dur - MOMENT_LEN);
-  el.innerHTML = `<div class="sheet-in" style="--c1:${t.c1};--c2:${t.c2}">
-    <i class="grab" aria-hidden="true"></i>
-    <button class="x close" data-sheetclose="1" aria-label="Закрыть">${ICON.close}</button>
-    ${t.src && t.src.startsWith("yt:") ? `<div class="ytslot" id="ytslot"></div>` : `<div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>`}
-    <div class="center"><div class="title">${esc(t.title)}</div><div class="muted">${artistLink(t)} · ${esc(t.genre)} ${playsHtml(t)}</div></div>
+  const yt = !!(t.src && t.src.startsWith("yt:"));
+  const body = `<div class="center"><div class="title">${esc(t.title)}</div><div class="muted">${artistLink(t)} · ${esc(t.genre)} ${playsHtml(t)}</div></div>
     <div class="wave" id="wave">${hs.map((h, i) => `<b data-i="${i}" style="height:${h}%"></b>`).join("")}</div>
     <div class="times"><span id="sCur">0:00</span><span>${fmt(t.dur)}</span></div>
     <div class="ctrl"><button data-shuffle="1" class="${S.shuffle ? "on" : ""}" aria-label="Вперемешку">${ICON.shuffle}</button><button data-step="-1" aria-label="Назад">${ICON.prev}</button><button class="playbtn big" data-toggle="1" aria-label="Играть">${ICON.play}${ICON.pause}</button><button data-step="1" aria-label="Дальше">${ICON.next}</button><button data-repeat="1" class="${S.repeat ? "on" : ""}" aria-label="Повтор">${S.repeat === 2 ? ICON.repeat1 : ICON.repeat}</button></div>
-    ${t.src && t.src.startsWith("yt:") ? `<div class="muted small">Песни из YouTube: эквалайзер недоступен, громкость работает.</div>` : ""}
+    <div class="card lyr" id="lyr"></div>
+    ${yt ? `<div class="muted small">Песни из YouTube: эквалайзер недоступен, громкость работает.</div>` : ""}
     ${soundPanel()}
     <div class="card mpanel">
       <div class="row"><b>${ICON.bolt} Твой момент</b><span class="sticker lime grow-r" id="mLabel"></span></div>
@@ -778,9 +778,16 @@ function renderSheet() {
       <button class="btn-s" data-previewmoment="1">${ICON.play.replace(/width="22" height="22"/, 'width="16" height="16"')} Прослушать момент</button>
       <input class="cap-in" id="mcap" maxlength="140" placeholder="Подпись: почему этот момент? (необязательно)">
       <button class="btn-a" data-postmoment="1">Опубликовать в ленту</button>
-    </div></div>`;
+    </div>`;
+  // У песен из YouTube видео закреплено сверху, а всё остальное прокручивается под ним
+  el.classList.toggle("has-yt", yt);
+  el.innerHTML = `<div class="sheet-in ${yt ? "yt" : ""}" style="--c1:${t.c1};--c2:${t.c2}">
+    <i class="grab" aria-hidden="true"></i>
+    <button class="x close" data-sheetclose="1" aria-label="Закрыть">${ICON.close}</button>
+    ${yt ? `<div class="ytslot" id="ytslot"></div><div class="sbody">${body}</div>` : `<div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>${body}`}</div>`;
   paintSheet();
   Plays.paint();
+  Lyrics.mount();
   if (typeof voiceSync === "function") voiceSync();
 }
 
@@ -2467,7 +2474,8 @@ const Yt = (() => {
         document.head.appendChild(s);
       }
     });
-    setInterval(place, 250);
+    const loop = () => { place(); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
     return loading;
   }
 
@@ -2496,7 +2504,8 @@ const Yt = (() => {
     if (S.sheet && slot) {
       const r = slot.getBoundingClientRect();
       box.classList.add("big");
-      box.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`;
+      const css = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`;
+      if (box.style.cssText !== css) box.style.cssText = css;
     } else if (box.classList.contains("big")) {
       box.classList.remove("big");
       box.style.cssText = "";
@@ -2677,6 +2686,128 @@ const Plays = (() => {
   });
 
   return { paint, load };
+})();
+
+/* ===== lyrics.js ===== */
+// ============================================================
+// Текст песни в большом плеере: строки подсвечиваются в такт, как в Яндекс Музыке.
+// Тексты берутся из открытой базы LRCLIB (бесплатно, без ключа).
+// Если текст идёт не в такт, можно сдвинуть его кнопками «Раньше / Позже».
+// ============================================================
+const Lyrics = (() => {
+  const API = "https://lrclib.net/api";
+  const cache = {};        // id -> { st: "load" | "ok" | "none" | "err", lines, plain }
+  const OFF = "riff-lyr-shift";
+  let shifts = {}, cur = -1, userAt = 0, shownId = null;
+  try { shifts = JSON.parse(localStorage.getItem(OFF) || "{}") || {}; } catch (e) { shifts = {}; }
+  const shiftOf = (id) => shifts[id] || 0;
+  const saveShift = () => { try { localStorage.setItem(OFF, JSON.stringify(shifts)); } catch (e) {} };
+
+  const clean = (s) => String(s || "").replace(/\s*[\(\[][^\)\]]*[\)\]]/g, "").replace(/\s+(feat|ft)\.?\s.*$/i, "").replace(/\s+/g, " ").trim();
+
+  function parseLrc(text) {
+    const out = [];
+    String(text || "").split(/\r?\n/).forEach((ln) => {
+      const m = /^((?:\[\d+:\d+(?:[.:]\d+)?\])+)\s*(.*)$/.exec(ln.trim());
+      if (!m || !m[2].trim()) return;
+      (m[1].match(/\[(\d+):(\d+(?:[.:]\d+)?)\]/g) || []).forEach((st) => {
+        const p = /\[(\d+):(\d+)(?:[.:](\d+))?\]/.exec(st);
+        out.push({ t: +p[1] * 60 + +p[2] + (p[3] ? +("0." + p[3]) : 0), s: m[2].trim() });
+      });
+    });
+    return out.sort((a, b) => a.t - b.t);
+  }
+
+  async function find(t) {
+    const a = clean(t.artist), n = clean(t.title), e = encodeURIComponent;
+    const get = async (url) => { const r = await fetch(url); if (!r.ok) return []; const j = await r.json(); return Array.isArray(j) ? j : []; };
+    let list = await get(`${API}/search?track_name=${e(n)}&artist_name=${e(a)}`);
+    if (!list.length) list = await get(`${API}/search?q=${e((a + " " + n).trim())}`);
+    list = list.filter((x) => x && !x.instrumental && (x.syncedLyrics || x.plainLyrics));
+    if (!list.length) return null;
+    const diff = (x) => (t.dur && x.duration ? Math.abs(x.duration - t.dur) : 0);
+    // ближе по длине и лучше с синхронизацией
+    list.sort((x, y) => (!!y.syncedLyrics - !!x.syncedLyrics) || diff(x) - diff(y));
+    return list[0];
+  }
+
+  async function load(t) {
+    cache[t.id] = { st: "load" };
+    try {
+      const x = await find(t);
+      if (!x) cache[t.id] = { st: "none" };
+      else {
+        const lines = parseLrc(x.syncedLyrics);
+        cache[t.id] = lines.length > 3 ? { st: "ok", lines } : x.plainLyrics ? { st: "ok", plain: x.plainLyrics } : { st: "none" };
+      }
+    } catch (e) {
+      cache[t.id] = { st: "err" };
+    }
+    if (S.sheet && S.nowId === t.id) mount();
+  }
+
+  function html(t) {
+    const c = cache[t.id];
+    const head = (extra) => `<div class="row"><b>${ico("mic", 18)} Текст</b>${extra || ""}</div>`;
+    if (!c || c.st === "load") return head() + `<div class="muted small">Ищем текст…</div>`;
+    if (c.st === "none") return head() + `<div class="muted small">Текста для этой песни пока нет.</div>`;
+    if (c.st === "err") return head() + `<div class="muted small">Не получилось загрузить текст.</div><button class="btn-s sm" data-lyrretry="1">Повторить</button>`;
+    if (c.plain) return head(`<span class="sticker grow-r">без синхронизации</span>`) + `<div class="lyr-box plain">${esc(c.plain).replace(/\n/g, "<br>")}</div>`;
+    const sh = shiftOf(t.id);
+    return head(`<span class="lyr-sh grow-r"><button data-lyrshift="-0.5" aria-label="Раньше">−</button><span id="lyrSh">${sh ? (sh > 0 ? "+" : "") + sh.toFixed(1) + " с" : "в такт"}</span><button data-lyrshift="0.5" aria-label="Позже">+</button></span>`)
+      + `<div class="lyr-box" id="lyrBox">${c.lines.map((l, i) => `<p data-li="${i}" data-lt="${l.t}">${esc(l.s)}</p>`).join("")}</div>`;
+  }
+
+  // Ставим блок в большой плеер (вызывается после его отрисовки)
+  function mount() {
+    const el = $("#lyr"), t = track(S.nowId);
+    if (!el || !t || !S.sheet) return;
+    if (!cache[t.id]) load(t);
+    if (el.dataset.for !== t.id || el.dataset.st !== (cache[t.id] || {}).st) {
+      el.innerHTML = html(t);
+      el.dataset.for = t.id; el.dataset.st = cache[t.id].st;
+      cur = -1; shownId = t.id;
+      const box = $("#lyrBox");
+      if (box) { const m = () => (userAt = Date.now()); box.addEventListener("wheel", m, { passive: true }); box.addEventListener("touchmove", m, { passive: true }); }
+    }
+    tick(true);
+  }
+
+  // Подсвечиваем текущую строку
+  function tick(jump) {
+    const t = track(S.nowId), c = t && cache[t.id], box = $("#lyrBox");
+    if (!S.sheet || !c || !c.lines || !box) return;
+    const time = (au.currentTime || 0) - shiftOf(t.id);
+    let i = -1;
+    for (let k = 0; k < c.lines.length; k++) { if (c.lines[k].t <= time + 0.15) i = k; else break; }
+    if (i === cur && !jump) return;
+    cur = i;
+    $$("#lyrBox p").forEach((p, k) => { p.classList.toggle("on", k === i); p.classList.toggle("past", k < i); });
+    const p = $(`#lyrBox p[data-li="${i}"]`);
+    if (p && (jump || Date.now() - userAt > 3000)) box.scrollTo({ top: p.offsetTop - box.clientHeight / 2 + p.clientHeight / 2, behavior: jump ? "auto" : "smooth" });
+  }
+
+  au.addEventListener("timeupdate", () => tick(false));
+  au.addEventListener("seeked", () => tick(true));
+
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-lyrshift],[data-lyrretry],#lyrBox p");
+    if (!b) return;
+    const t = track(S.nowId);
+    if (!t) return;
+    if (b.dataset.lyrretry) { delete cache[t.id]; $("#lyr").dataset.st = ""; return mount(); }
+    if (b.dataset.lyrshift) {
+      shifts[t.id] = Math.round((shiftOf(t.id) + +b.dataset.lyrshift) * 10) / 10;
+      saveShift();
+      const l = $("#lyrSh"); if (l) l.textContent = shiftOf(t.id) ? (shiftOf(t.id) > 0 ? "+" : "") + shiftOf(t.id).toFixed(1) + " с" : "в такт";
+      return tick(true);
+    }
+    // нажатие на строку: перематываем к ней
+    const li = +b.dataset.li, c = cache[t.id];
+    if (c && c.lines && c.lines[li]) { until = null; au.currentTime = Math.max(0, c.lines[li].t + shiftOf(t.id)); userAt = 0; if (au.paused) au.play().catch(() => {}); tick(true); }
+  });
+
+  return { mount, tick };
 })();
 
 /* ===== catalog.js ===== */
@@ -3573,7 +3704,9 @@ const Theme = (() => {
   let sy = null, dy = 0, box = null;
   document.addEventListener("touchstart", (e) => {
     const sh = e.target.closest("#sheet");
-    if (!sh || e.target.closest("#wave,input,select,textarea,.mpanel,.spanel")) { sy = null; return; }
+    if (!sh || e.target.closest("#wave,input,select,textarea,.mpanel,.spanel,.lyr-box")) { sy = null; return; }
+    const inner = e.target.closest(".sbody");
+    if (inner && inner.scrollTop > 2) { sy = null; return; }
     if (sh.scrollTop > 2) { sy = null; return; }
     sy = e.touches[0].clientY; dy = 0; box = sh.querySelector(".sheet-in");
   }, { passive: true });
