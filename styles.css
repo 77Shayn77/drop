@@ -544,11 +544,6 @@ body.yt-on #ytbox { display: block; }
 #cres.busy { opacity: 0.5; transition: opacity 0.2s; pointer-events: none; }
 
 /* ---------- Видео закреплено, текст песни ---------- */
-.sheet.has-yt { overflow: hidden; }
-.sheet-in.yt { height: 100dvh; padding-bottom: 0; overflow: hidden; }
-.sheet-in.yt .sbody { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: calc(40px + env(safe-area-inset-bottom)); overscroll-behavior: contain; scrollbar-width: none; }
-.sheet-in.yt .sbody::-webkit-scrollbar { display: none; }
-@media (min-width: 801px) { .sheet-in.yt { height: calc(100dvh - 56px); } }
 .lyr { display: flex; flex-direction: column; gap: 10px; }
 .lyr-box { height: 240px; overflow-y: auto; scrollbar-width: none; padding: 80px 4px; display: flex; flex-direction: column; gap: 14px; -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); overscroll-behavior: contain; }
 .lyr-box::-webkit-scrollbar { display: none; }
@@ -558,4 +553,16 @@ body.yt-on #ytbox { display: block; }
 .lyr-box.plain { height: auto; max-height: 300px; padding: 0; display: block; font-size: 15px; line-height: 1.6; color: var(--tx); -webkit-mask-image: none; mask-image: none; }
 .lyr-sh { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--mu); }
 .lyr-sh button { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: transparent; color: var(--tx); font-size: 16px; line-height: 1; }
-.sheet-in.yt .sbody > * { flex-shrink: 0; }
+.pact { margin-top: -4px; }
+.pact .tact { flex: 1 1 auto; }
+.lyr .btn-s { align-self: flex-start; }
+.pq, .pset { display: flex; flex-direction: column; gap: 10px; }
+.qrow { display: flex; align-items: center; gap: 6px; }
+.qplay { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 14px; background: transparent; border: 0; color: var(--tx); text-align: left; }
+.qplay:hover { background: var(--card2); }
+.qplay .grow { min-width: 0; display: flex; flex-direction: column; }
+.qplay small { color: var(--mu); }
+.qplay .cover, .qplay > :first-child { flex: none; width: 44px; height: 44px; border-radius: 12px; }
+.pbar { cursor: pointer; }
+.sheet-in .art { width: min(300px, 70vw, 34dvh); }
+.pbar::after { content: ""; position: absolute; left: 0; right: 0; top: -12px; bottom: -4px; }

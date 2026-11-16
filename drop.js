@@ -380,7 +380,7 @@ aud.preload = "metadata";
 const au = (() => {
   const EV = ["play", "pause", "ended", "timeupdate", "loadedmetadata", "loadstart", "seeked", "error", "playing", "canplay", "waiting"];
   const L = {};
-  let yt = false, ytId = null, ytPlay = false, loaded = false, seekV = 0, seekAt = 0;
+  let rate = 1, yt = false, ytId = null, ytPlay = false, loaded = false, seekV = 0, seekAt = 0;
   const o = { startAt: 0 };
   const emit = (n) => (L[n] || []).slice().forEach((r) => {
     if (r.once) L[n] = L[n].filter((x) => x !== r);
@@ -437,6 +437,7 @@ const au = (() => {
     },
     volume: { get: () => aud.volume, set(v) { aud.volume = v; } },
     crossOrigin: { get: () => aud.crossOrigin, set(v) { aud.crossOrigin = v; } },
+    playbackRate: { get: () => rate, set(v) { rate = v; aud.defaultPlaybackRate = v; aud.playbackRate = v; if (yt && Y()) Y().rate(v); } },
   });
   o.play = () => { if (yt) { if (Y()) Y().cmd("playVideo"); setPlaying(true); return Promise.resolve(); } return aud.play(); };
   o.pause = () => { if (yt) { if (Y()) Y().cmd("pauseVideo"); setPlaying(false); } else aud.pause(); };
@@ -455,8 +456,10 @@ function startPlayback(id, from, to, key) {
   if (typeof FX !== "undefined") { FX.init(); FX.resume(); }
   until = to == null ? null : to;
   playKey = key;
+  const fresh = S.nowId !== id || !!S.resume; // песня ещё не загружена в плеер
+  S.resume = null;
   const go = () => { if (from != null) au.currentTime = from; au.play().catch(() => {}); };
-  if (S.nowId !== id) {
+  if (fresh) {
     S.nowId = id;
     S.mstart = t.hot;
     au.startAt = from || 0;
@@ -482,11 +485,13 @@ function playMoment(id, start) {
 }
 function toggleNow() {
   if (!S.nowId) return;
+  if (S.resume) { const r = S.resume; return startPlayback(r.id, r.pos, null, r.id); }
   if (typeof FX !== "undefined") { FX.init(); FX.resume(); }
   if (au.paused) au.play().catch(() => {}); else au.pause();
 }
 const trackList = () => (S.queue && S.queue.includes(S.nowId) ? S.queue.map(track).filter(Boolean) : TRACKS.filter((t) => !t.ext));
 function step(dir) {
+  if (dir > 0 && S.next && S.next.length) { const id = S.next.shift(); if (id !== S.nowId && track(id)) return playTrack(id); }
   const L = trackList();
   const i = L.findIndex((t) => t.id === S.nowId);
   const n = L[(i + dir + L.length) % L.length];
@@ -768,7 +773,10 @@ function renderSheet() {
     <div class="wave" id="wave">${hs.map((h, i) => `<b data-i="${i}" style="height:${h}%"></b>`).join("")}</div>
     <div class="times"><span id="sCur">0:00</span><span>${fmt(t.dur)}</span></div>
     <div class="ctrl"><button data-shuffle="1" class="${S.shuffle ? "on" : ""}" aria-label="Вперемешку">${ICON.shuffle}</button><button data-step="-1" aria-label="Назад">${ICON.prev}</button><button class="playbtn big" data-toggle="1" aria-label="Играть">${ICON.play}${ICON.pause}</button><button data-step="1" aria-label="Дальше">${ICON.next}</button><button data-repeat="1" class="${S.repeat ? "on" : ""}" aria-label="Повтор">${S.repeat === 2 ? ICON.repeat1 : ICON.repeat}</button></div>
+    ${sheetActions(t)}
     <div class="card lyr" id="lyr"></div>
+    <div class="card pq">${sheetQueue()}</div>
+    <div class="card pset">${sheetSettings()}</div>
     ${yt ? `<div class="muted small">Песни из YouTube: эквалайзер недоступен, громкость работает.</div>` : ""}
     ${soundPanel()}
     <div class="card mpanel">
@@ -779,12 +787,10 @@ function renderSheet() {
       <input class="cap-in" id="mcap" maxlength="140" placeholder="Подпись: почему этот момент? (необязательно)">
       <button class="btn-a" data-postmoment="1">Опубликовать в ленту</button>
     </div>`;
-  // У песен из YouTube видео закреплено сверху, а всё остальное прокручивается под ним
-  el.classList.toggle("has-yt", yt);
-  el.innerHTML = `<div class="sheet-in ${yt ? "yt" : ""}" style="--c1:${t.c1};--c2:${t.c2}">
+  el.innerHTML = `<div class="sheet-in" style="--c1:${t.c1};--c2:${t.c2}">
     <i class="grab" aria-hidden="true"></i>
     <button class="x close" data-sheetclose="1" aria-label="Закрыть">${ICON.close}</button>
-    ${yt ? `<div class="ytslot" id="ytslot"></div><div class="sbody">${body}</div>` : `<div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>${body}`}</div>`;
+    ${yt ? `<div class="ytslot" id="ytslot"></div>` : `<div class="art ${t.cover_url ? "img" : ""}" style="background:${coverBg(t)}"><i></i></div>`}${body}</div>`;
   paintSheet();
   Plays.paint();
   Lyrics.mount();
@@ -808,7 +814,7 @@ function paintSheet() {
 function sync(full) {
   if (full) renderPlayer();
   const t = track(S.nowId);
-  const dur = (t && t.dur) || 1, cur = au.currentTime || 0;
+  const dur = (t && t.dur) || 1, cur = S.resume ? S.resume.pos : au.currentTime || 0;
   const bar = $("#pBar"); if (bar) bar.style.width = clamp((cur / dur) * 100, 0, 100) + "%";
   $$("[data-play]").forEach((b) => b.classList.toggle("playing", S.playing && playKey === b.dataset.play));
   $$("[data-toggle]").forEach((b) => b.classList.toggle("playing", S.playing));
@@ -1676,6 +1682,8 @@ const FX = (() => {
   function setAll(arr) { arr.forEach((v, i) => setBand(i, v)); }
 
   function next() {
+    if (typeof Sleep !== "undefined" && Sleep.stopAtEnd()) return;
+    if (S.repeat !== 2 && S.next && S.next.length) return step(1);
     if (S.repeat === 2) { au.currentTime = 0; au.play().catch(() => {}); return; }
     const L = trackList(), i = L.findIndex((t) => t.id === S.nowId);
     if (S.shuffle && L.length > 1) {
@@ -2486,6 +2494,7 @@ const Yt = (() => {
       const s = pend.start; pend = null;
       p.loadVideoById({ videoId: id, startSeconds: s || 0 });
       vol(typeof FX !== "undefined" ? FX.vol() : 1);
+      rate(au.playbackRate);
     };
     if (ready) go(); else ensure().then(go);
   }
@@ -2495,6 +2504,7 @@ const Yt = (() => {
   const dur = () => { try { return (ready && p.getDuration && p.getDuration()) || 0; } catch (e) { return 0; } };
   const seek = (v) => { if (ready && p) try { p.seekTo(v, true); } catch (e) {} };
   const vol = (v) => { if (ready && p) try { p.setVolume(Math.round(Math.max(0, Math.min(1, v)) * 100)); } catch (e) {} };
+  const rate = (v) => { if (ready && p && p.setPlaybackRate) try { p.setPlaybackRate(v); } catch (e) {} };
   const stop = () => { pend = null; cmd("stopVideo"); };
 
   // Большой плеер: ставим видео на отведённое место. Иначе плавает над мини-плеером.
@@ -2502,9 +2512,11 @@ const Yt = (() => {
     if (!box) return;
     const slot = $("#ytslot");
     if (S.sheet && slot) {
-      const r = slot.getBoundingClientRect();
+      const r = slot.getBoundingClientRect(), c = ($(".sheet-in") || slot).getBoundingClientRect();
+      // Видео прокручивается вместе со страницей и не вылезает за края окна плеера
+      const top = Math.max(0, Math.max(0, c.top) - r.top), bottom = Math.max(0, r.bottom - Math.min(innerHeight, c.bottom));
       box.classList.add("big");
-      const css = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`;
+      const css = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto;clip-path:inset(${top}px 0 ${bottom}px 0 round 22px)`;
       if (box.style.cssText !== css) box.style.cssText = css;
     } else if (box.classList.contains("big")) {
       box.classList.remove("big");
@@ -2512,7 +2524,7 @@ const Yt = (() => {
     }
   }
 
-  return { ensure, load, cmd, time, dur, seek, vol, stop, place };
+  return { ensure, load, cmd, time, dur, seek, vol, rate, stop, place };
 })();
 
 /* ===== ytapi.js ===== */
@@ -2810,6 +2822,184 @@ const Lyrics = (() => {
   return { mount, tick };
 })();
 
+/* ===== player2.js ===== */
+// ============================================================
+// Удобства плеера: очередь «Далее», продолжение с того же места, скорость,
+// таймер сна, горячие клавиши, пропуск битых песен, ссылка на песню,
+// перемотка по полоске мини-плеера.
+// ============================================================
+S.next = [];      // песни, которые человек сам поставил следующими
+S.resume = null;  // песня, найденная после перезапуска (ждёт нажатия «играть»)
+S.sleep = null;   // таймер сна: { at: время, eot: до конца песни }
+S.rate = 1;
+
+const RATES = [0.75, 1, 1.25, 1.5, 2];
+const SLEEPS = [["15", "15 мин"], ["30", "30 мин"], ["60", "1 час"], ["end", "До конца песни"]];
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+// ---------- список, из которого играем ----------
+// Нажали «играть» в каталоге или в списке: «Дальше» идёт по этому списку, а не по своим песням
+function queueFrom(btn) {
+  const box = btn.closest("#cres") || btn.closest("#view");
+  if (!box) return null;
+  const ids = [...new Set($$("[data-play]", box).map((b) => b.dataset.play))].filter((i) => track(i));
+  return ids.length > 1 && ids.includes(btn.dataset.play) ? ids : null;
+}
+
+// ---------- разделы большого плеера ----------
+function sheetActions(t) {
+  const saved = S.lib && S.lib.saved && S.lib.saved.has(t.id);
+  return `<div class="tacts pact"><button class="tact ${saved ? "on" : ""}" data-savetrack="${t.id}">${ico("bookmark", 18)} ${saved ? "Сохранено" : "Сохранить"}</button><button class="tact" data-addpl="${t.id}">${ico("playlist", 18)} В плейлист</button><button class="tact" data-qadd="${t.id}">${ico("playlist", 18)} Играть следующей</button><button class="tact" data-sharelink="${t.id}">${ico("megaphone", 18)} Ссылка</button></div>`;
+}
+
+function upNext() {
+  const L = trackList(), i = L.findIndex((t) => t.id === S.nowId), out = [];
+  if (!S.shuffle) for (let k = i + 1; k < L.length && out.length < 8; k++) out.push(L[k]);
+  if (!S.shuffle && S.repeat === 1) for (let k = 0; k < i && out.length < 8; k++) out.push(L[k]);
+  return out;
+}
+
+function sheetQueue() {
+  const man = (S.next || []).map(track).filter(Boolean), rest = upNext();
+  const row = (t, m) => `<div class="qrow"><button class="qplay" data-qplay="${t.id}${m ? ":m" : ""}">${cover(t)}<span class="grow"><b class="ell">${esc(t.title)}</b><small class="ell">${esc(t.artist)}</small></span></button>${m ? `<button class="x" data-qdel="${t.id}" aria-label="Убрать из очереди">${ICON.close}</button>` : ""}</div>`;
+  const body = man.map((t) => row(t, true)).join("") + rest.map((t) => row(t, false)).join("");
+  return `<div class="row"><b>${ico("playlist", 18)} Далее</b>${S.shuffle ? `<span class="sticker grow-r">вперемешку</span>` : ""}</div>`
+    + (body || `<div class="muted small">${S.shuffle ? "Включено перемешивание: следующая песня случайная." : "Это последняя песня в списке."}</div>`) + body;
+}
+
+function sheetSettings() {
+  const left = S.sleep && S.sleep.at ? Math.max(0, Math.ceil((S.sleep.at - Date.now()) / 60000)) : 0;
+  return `<div class="row"><b>Скорость</b></div>
+    <div class="chips">${RATES.map((r) => `<button class="chip sm ${S.rate === r ? "on" : ""}" data-rate="${r}">${r === 1 ? "обычная" : r + "×"}</button>`).join("")}</div>
+    <div class="row"><b>${ico("moon", 18)} Таймер сна</b><span class="muted small grow-r" id="sleepLabel">${S.sleep ? (S.sleep.eot ? "остановится в конце песни" : "через " + left + " мин") : ""}</span></div>
+    <div class="chips">${SLEEPS.map(([k, l]) => `<button class="chip sm ${S.sleep && (k === "end" ? S.sleep.eot : S.sleep.key === k) ? "on" : ""}" data-sleep="${k}">${l}</button>`).join("")}${S.sleep ? `<button class="chip sm" data-sleep="off">Выключить</button>` : ""}</div>`;
+}
+
+const Sleep = {
+  stopAtEnd() {
+    if (S.sleep && S.sleep.eot) { S.sleep = null; toast("Таймер сна: музыка остановлена"); if (S.sheet) renderSheet(); return true; }
+    return false;
+  },
+};
+setInterval(() => {
+  if (!S.sleep || !S.sleep.at) return;
+  if (Date.now() >= S.sleep.at) { S.sleep = null; au.pause(); toast("Таймер сна: музыка остановлена"); if (S.sheet) renderSheet(); return; }
+  const l = $("#sleepLabel"); if (l) l.textContent = "через " + Math.ceil((S.sleep.at - Date.now()) / 60000) + " мин";
+}, 1000);
+
+// ---------- продолжить с того же места ----------
+const Resume = (() => {
+  const K = "riff-resume";
+  let last = 0, saved, done = false;
+  try { saved = JSON.parse(lsGet(K) || "null"); } catch (e) { saved = null; }
+  const save = () => {
+    if (!S.nowId || S.resume) return;
+    saved = { id: S.nowId, pos: Math.floor(au.currentTime || 0), at: Date.now() };
+    lsSet(K, JSON.stringify(saved));
+  };
+  au.addEventListener("timeupdate", () => { if (until == null && Date.now() - last > 4000) { last = Date.now(); save(); } });
+  au.addEventListener("pause", () => { if (until == null) save(); });
+
+  // Вызывается при отрисовке: как только песня появилась в списках, показываем её в мини-плеере
+  function restore() {
+    if (done || S.nowId) return;
+    if (!saved || Date.now() - saved.at > 14 * 864e5) { done = true; return; }
+    if (!track(saved.id)) return;
+    done = true;
+    S.nowId = saved.id; S.resume = { id: saved.id, pos: saved.pos || 0 };
+    renderPlayer(); sync(false);
+  }
+  return { restore, save };
+})();
+
+// ---------- ссылка на песню ----------
+const Deep = (() => {
+  let want = (/[#&]t=([\w-]+)/.exec(location.hash) || [])[1] || null;
+  function open() {
+    if (!want || !track(want)) return;
+    const id = want; want = null;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    if (S.nowId && S.nowId !== id) { S.resume = null; }
+    S.nowId = id; S.resume = { id, pos: 0 };
+    S.sheet = true; renderPlayer(); renderSheet(); sync(false);
+  }
+  const link = (id) => location.origin + location.pathname + "#t=" + encodeURIComponent(id);
+  return { open, link };
+})();
+
+// ---------- пропуск песен, которые не загружаются ----------
+let badRun = 0;
+au.addEventListener("playing", () => { badRun = 0; });
+au.addEventListener("error", () => {
+  if (!S.nowId || !S.playing && !S.resume && au.paused && !au.isYt()) { /* пользователь ещё не нажимал играть */ }
+  if (badRun >= 3 || trackList().length < 2) return;
+  badRun++;
+  setTimeout(() => { if (au.paused && !au.error || au.isYt() || au.error) step(1); }, 900);
+});
+
+// ---------- скорость ----------
+function setRate(v) {
+  S.rate = v; au.playbackRate = v; lsSet("riff-rate", String(v));
+  if (S.sheet) { $$("[data-rate]").forEach((b) => b.classList.toggle("on", +b.dataset.rate === v)); }
+}
+{ const r = parseFloat(lsGet("riff-rate")); if (RATES.includes(r)) { S.rate = r; au.playbackRate = r; } }
+
+// ---------- нажатия ----------
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-qadd],[data-qplay],[data-qdel],[data-rate],[data-sleep],[data-sharelink],.pbar");
+  if (!b) return;
+  const d = b.dataset;
+  if (d.qadd) {
+    if (d.qadd === S.nowId) return toast("Эта песня уже играет");
+    S.next = (S.next || []).filter((x) => x !== d.qadd); S.next.push(d.qadd);
+    toast("Сыграет следующей");
+    if (S.sheet) renderSheet();
+    return;
+  }
+  if (d.qdel) { S.next = (S.next || []).filter((x) => x !== d.qdel); return renderSheet(); }
+  if (d.qplay) { const id = d.qplay.split(":")[0]; if (d.qplay.endsWith(":m")) S.next = S.next.filter((x) => x !== id); return playTrack(id); }
+  if (d.rate) return setRate(+d.rate);
+  if (d.sleep) {
+    if (d.sleep === "off") S.sleep = null;
+    else if (d.sleep === "end") S.sleep = { eot: true, key: "end" };
+    else S.sleep = { at: Date.now() + +d.sleep * 60000, key: d.sleep };
+    return renderSheet();
+  }
+  if (d.sharelink) {
+    const url = Deep.link(d.sharelink), t = track(d.sharelink);
+    if (navigator.share) return navigator.share({ title: t ? t.title : "Riff", text: t ? t.title + " — " + t.artist : "", url }).catch(() => {});
+    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast("Ссылка скопирована"), () => toast(url));
+    return;
+  }
+  // нажали на полоску мини-плеера: перематываем
+  if (b.classList.contains("pbar")) {
+    const t = track(S.nowId); if (!t) return;
+    const r = b.getBoundingClientRect();
+    if (S.resume) { const x = S.resume; S.resume = null; return startPlayback(x.id, clamp((e.clientX - r.left) / r.width, 0, 1) * t.dur, null, x.id); }
+    until = null;
+    au.currentTime = clamp((e.clientX - r.left) / r.width, 0, 1) * (au.duration && isFinite(au.duration) ? au.duration : t.dur);
+    sync(false);
+  }
+});
+
+// ---------- горячие клавиши (на компьютере) ----------
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || !S.nowId) return;
+  const tg = e.target;
+  if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName))) return;
+  if (!$("#modal").hidden) return;
+  if (e.code === "Space") { e.preventDefault(); return toggleNow(); }
+  if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
+    e.preventDefault();
+    if (e.shiftKey) return step(e.code === "ArrowRight" ? 1 : -1);
+    if (S.resume) return;
+    until = null;
+    au.currentTime = clamp((au.currentTime || 0) + (e.code === "ArrowRight" ? 5 : -5), 0, au.duration && isFinite(au.duration) ? au.duration : 1e6);
+    sync(false);
+  }
+});
+
 /* ===== catalog.js ===== */
 // ============================================================
 // Каталог музыки (Audius, бесплатно, без ключа).
@@ -2972,7 +3162,7 @@ const Catalog = (() => {
   // Ошибка загрузки внешней песни
   au.addEventListener("error", () => {
     const t = track(S.nowId);
-    if (t && t.ext) toast("Эта песня сейчас не загружается из каталога");
+    if (t && t.ext && !au.isYt()) toast("Эта песня сейчас не загружается из каталога");
   });
 
   let timer = null;
@@ -3674,7 +3864,7 @@ const Theme = (() => {
     au.addEventListener("timeupdate", () => {
       if (Date.now() - lastPos < 1000 || !au.duration || !isFinite(au.duration)) return;
       lastPos = Date.now();
-      safe(() => ms.setPositionState({ duration: au.duration, position: Math.min(au.currentTime, au.duration), playbackRate: 1 }));
+      safe(() => ms.setPositionState({ duration: au.duration, position: Math.min(au.currentTime, au.duration), playbackRate: au.playbackRate || 1 }));
     });
   }
 
@@ -3741,6 +3931,7 @@ function render(keep) {
   sync(true);
   Notifs.paint();
   Plays.paint();
+  Resume.restore(); Deep.open();
   if (S.view === "chats" && S.chat.peer) { const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight; }
   window.scrollTo(0, keep ? y : 0);
 }
@@ -3825,7 +4016,7 @@ document.addEventListener("click", async (e) => {
   if (!el) return;
   const d = el.dataset;
   if (d.view) return go(d.view);
-  if (d.play) { S.queue = null; return playTrack(d.play); }
+  if (d.play) { S.queue = queueFrom(el); return playTrack(d.play); }
   if (d.moment) { const [id, st] = d.moment.split(":"); return playMoment(id, +st); }
   if (d.toggle) return toggleNow();
   if (d.step) return step(+d.step);
