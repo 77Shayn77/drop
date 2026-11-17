@@ -2616,13 +2616,38 @@ const YtApi = (() => {
     });
   };
 
+  // Для импорта по ссылке: берём всё, что можно проиграть (без жёсткого фильтра «только музыка»)
+  async function detailsAny(ids) {
+    const out = [];
+    for (let i = 0; i < ids.length; i += 50) {
+      const part = ids.slice(i, i + 50).filter((x) => ID.test(x));
+      if (!part.length) continue;
+      const d = await call("videos", { part: "snippet,contentDetails,statistics,status", id: part.join(","), maxResults: 50 });
+      (d.items || []).filter((v) => v.status && v.status.embeddable !== false && v.status.privacyStatus !== "private" && v.snippet && v.snippet.liveBroadcastContent !== "live").map(parse).filter((t) => t.dur >= 30 && t.dur <= 1500).forEach((t) => out.push(t));
+    }
+    return out;
+  }
+  async function playlist(listId) {
+    const ids = [];
+    let token = "", title = "";
+    for (let page = 0; page < 3; page++) {
+      const d = await call("playlistItems", { part: "contentDetails", maxResults: 50, playlistId: listId, ...(token ? { pageToken: token } : {}) });
+      (d.items || []).forEach((x) => x.contentDetails && ids.push(x.contentDetails.videoId));
+      token = d.nextPageToken || "";
+      if (!token) break;
+    }
+    try { const p = await call("playlists", { part: "snippet", id: listId }); title = (p.items && p.items[0] && p.items[0].snippet.title) || ""; } catch (e) { /* без названия */ }
+    return { title, total: ids.length, rows: await detailsAny(ids) };
+  }
+  const oneVideo = async (id) => ({ title: "", total: 1, rows: await detailsAny([id]) });
+
   const friendly = (e) => (e && (e.reason === "quotaExceeded" || e.status === 429)
     ? "На сегодня лимит запросов к YouTube закончился. Завтра заработает снова, а пока доступны уже найденные песни и «Независимые»."
     : e && (e.status === 400 || e.status === 403)
       ? "YouTube не принял ключ. Проверьте ключ в config.js и его ограничения в Google."
       : "Не получилось подключиться к YouTube. Проверьте интернет и попробуйте ещё раз.");
 
-  return { enabled, chart, search, friendly };
+  return { enabled, chart, search, friendly, playlist, oneVideo };
 })();
 
 /* ===== plays.js ===== */
@@ -2770,7 +2795,7 @@ const Lyrics = (() => {
     if (c.plain) return head(`<span class="sticker grow-r">без синхронизации</span>`) + `<div class="lyr-box plain">${esc(c.plain).replace(/\n/g, "<br>")}</div>`;
     const sh = shiftOf(t.id);
     return head(`<span class="lyr-sh grow-r"><button data-lyrshift="-0.5" aria-label="Раньше">−</button><span id="lyrSh">${sh ? (sh > 0 ? "+" : "") + sh.toFixed(1) + " с" : "в такт"}</span><button data-lyrshift="0.5" aria-label="Позже">+</button></span>`)
-      + `<div class="lyr-box" id="lyrBox">${c.lines.map((l, i) => `<p data-li="${i}" data-lt="${l.t}">${esc(l.s)}</p>`).join("")}</div>`;
+      + `<div class="lyr-box" id="lyrBox">${c.lines.map((l, i) => `<p data-li="${i}" data-lt="${l.t}">${l.s.split(/\s+/).map((w) => `<span class="w">${esc(w)}</span>`).join(" ")}</p>`).join("")}</div>`;
   }
 
   // Ставим блок в большой плеер (вызывается после его отрисовки)
@@ -2795,8 +2820,16 @@ const Lyrics = (() => {
     const time = (au.currentTime || 0) - shiftOf(t.id);
     let i = -1;
     for (let k = 0; k < c.lines.length; k++) { if (c.lines[k].t <= time + 0.15) i = k; else break; }
+    if (i >= 0) {
+      // Слова зажигаются по очереди внутри строки, как в караоке
+      const nx = c.lines[i + 1], span = Math.max(1.2, Math.min(7, (nx ? nx.t : c.lines[i].t + 5) - c.lines[i].t));
+      const pr = Math.max(0, Math.min(1, (time - c.lines[i].t) / (span * 0.85)));
+      const ws = $$(`#lyrBox p[data-li="${i}"] .w`), n = Math.ceil(pr * ws.length - 0.001);
+      ws.forEach((w, k) => w.classList.toggle("lit", k < n));
+    }
     if (i === cur && !jump) return;
     cur = i;
+    $$("#lyrBox .w.lit").forEach((w) => { if (!w.closest("p.on")) w.classList.remove("lit"); });
     $$("#lyrBox p").forEach((p, k) => { p.classList.toggle("on", k === i); p.classList.toggle("past", k < i); });
     const p = $(`#lyrBox p[data-li="${i}"]`);
     if (p && (jump || Date.now() - userAt > 3000)) box.scrollTo({ top: p.offsetTop - box.clientHeight / 2 + p.clientHeight / 2, behavior: jump ? "auto" : "smooth" });
@@ -3121,9 +3154,112 @@ const Sources = (() => {
     })).filter((x) => x.dur >= 20);
   }
 
-  return { LIST, avail, NAMES, of, itunes, jamendo, jmKey };
+  async function itunesLookup(id) {
+    const d = await json(`https://itunes.apple.com/lookup?id=${encodeURIComponent(id)}&entity=song&country=RU`);
+    const rs = d.results || [], head = rs.find((x) => x.wrapperType === "collection");
+    const rows = rs.filter((x) => x.wrapperType === "track" && x.previewUrl && x.trackId).map((x) => ({
+      id: "it_" + x.trackId, title: x.trackName, artist: x.artistName, genre: (x.primaryGenreName || "Apple Music").toLowerCase(), dur: 30,
+      cover_url: (x.artworkUrl100 || "").replace("100x100", "300x300") || null, src: x.previewUrl,
+    }));
+    return { title: head ? head.collectionName : "", total: rows.length, rows };
+  }
+
+  return { itunesLookup, LIST, avail, NAMES, of, itunes, jamendo, jmKey };
 })();
 const srcName = (t) => (t && t.ext ? Sources.NAMES[Sources.of(t.id)] || "" : "");
+
+/* ===== importer.js ===== */
+// ============================================================
+// «Вставь ссылку: плейлист переезжает к нам». Вставляешь ссылку в поиск,
+// и Riff достаёт из неё песни: YouTube и YouTube Music (видео и плейлисты),
+// Audius и Apple Music. Потом можно слушать сразу или сохранить плейлистом.
+// ============================================================
+const Importer = (() => {
+  S.imp = { url: "", st: "idle", title: "", ids: [], total: 0, msg: "", src: "" };
+  const isLink = (s) => /^\s*https?:\/\/\S+/i.test(String(s || ""));
+  const CLOSED = /(spotify\.com|spotify\.link|soundcloud\.com|deezer\.com|music\.yandex|vk\.com|zvuk\.com|tiktok\.com)/i;
+
+  function kind(u) {
+    let x;
+    try { x = new URL(u); } catch (e) { return null; }
+    const h = x.hostname.replace(/^www\./, "");
+    if (/(^|\.)youtube\.com$/.test(h) || h === "youtu.be") {
+      const list = x.searchParams.get("list"), v = x.searchParams.get("v") || (h === "youtu.be" ? x.pathname.slice(1) : "");
+      if (list && !/^RD/.test(list)) return { k: "ytlist", id: list, label: "YouTube" };
+      if (v) return { k: "ytvideo", id: v.slice(0, 11), label: "YouTube" };
+      if (list) return { k: "ytmix" };
+    }
+    if (/(^|\.)audius\.co$/.test(h)) return { k: "audius", id: u, label: "Audius" };
+    if (h === "music.apple.com" || h === "itunes.apple.com") {
+      const t = x.searchParams.get("i"), m = x.pathname.match(/\/(\d{5,})(?:\/|$)/);
+      const id = t || (m && m[1]);
+      if (id) return { k: "apple", id, label: "Apple Music · превью 30 с" };
+    }
+    if (CLOSED.test(h)) return { k: "closed", label: h };
+    return null;
+  }
+
+  async function run(url) {
+    const I = S.imp;
+    Object.assign(I, { url, st: "load", title: "", ids: [], total: 0, msg: "", src: "" });
+    Catalog.paint();
+    const t = kind(url);
+    try {
+      if (!t) throw new Error("Эту ссылку я не узнал. Поддерживаются YouTube, YouTube Music, Audius и Apple Music.");
+      if (t.k === "closed") throw new Error("Spotify, SoundCloud и другие закрытые сервисы не отдают песни сторонним сайтам. Выход: перенеси плейлист на YouTube Music (бесплатно, через сайты вроде TuneMyMusic или Soundiiz) и вставь сюда ссылку на него.");
+      if (t.k === "ytmix") throw new Error("Это автоматический микс YouTube, его состав не отдаётся. Вставь ссылку на обычный плейлист или на одно видео.");
+      I.src = t.label;
+      let res;
+      if (t.k === "ytlist" || t.k === "ytvideo") {
+        if (!YtApi.enabled()) throw new Error("Для YouTube нужен ключ в config.js.");
+        res = t.k === "ytlist" ? await YtApi.playlist(t.id) : await YtApi.oneVideo(t.id);
+        I.ids = res.rows.map((r) => Catalog.reg(Catalog.make(r)).id);
+      } else if (t.k === "audius") {
+        const d = await Catalog.raw("/resolve?url=" + encodeURIComponent(t.id));
+        if (d && d.playlist_name) {
+          const rows = await Catalog.raw(`/playlists/${encodeURIComponent(d.id)}/tracks`);
+          I.ids = (rows || []).filter((x) => x && x.is_streamable !== false).map(Catalog.fromApi).map((x) => x.id);
+          res = { title: d.playlist_name, total: (rows || []).length };
+        } else if (d && d.title) { I.ids = [Catalog.fromApi(d).id]; res = { title: "", total: 1 }; }
+        else throw new Error("Не нашёл на Audius.");
+      } else {
+        res = await Sources.itunesLookup(t.id);
+        I.ids = res.rows.map((r) => Catalog.reg(Catalog.make(r)).id);
+      }
+      if (S.imp.url !== url) return;
+      I.title = res.title || (I.ids.length === 1 ? "" : "Импорт"); I.total = res.total || I.ids.length;
+      if (!I.ids.length) throw new Error("Не нашёл песен, которые можно проиграть. Возможно, плейлист закрыт или песни запрещено встраивать.");
+      I.st = "ok";
+    } catch (e) {
+      if (S.imp.url !== url) return;
+      I.st = "err"; I.msg = e && e.reason ? YtApi.friendly(e) : (e && e.message) || "Не получилось";
+      if (/Failed to fetch|NetworkError/i.test(I.msg)) I.msg = "Не получилось подключиться. Проверь интернет.";
+    }
+    Catalog.paint();
+  }
+
+  function html() {
+    const I = S.imp;
+    if (I.st === "load" || I.st === "idle") return `<div class="card imp"><b>Читаю ссылку…</b><div class="muted small">Достаю песни из плейлиста.</div></div>${skeletonPost()}`;
+    if (I.st === "err") return `<div class="alert">${esc(I.msg)}</div>`;
+    const list = I.ids.map(track).filter(Boolean), skipped = Math.max(0, I.total - list.length);
+    return `<div class="card imp"><div class="muted small">${esc(I.src)}</div><div class="title">${esc(I.title || (list[0] && list[0].title) || "Импорт")}</div>
+      <div class="muted">Песен: ${list.length}${skipped ? ` · пропущено: ${skipped} (недоступны для встраивания)` : ""}</div>
+      <div class="row improw"><button class="btn-a grow" data-impplay="1">${ICON.play} Слушать всё</button>${list.length > 1 || I.title ? `<button class="btn-s" data-impsave="1">В плейлист</button>` : ""}</div></div>
+      ${list.slice(0, 40).map(trackCard).join("")}${list.length > 40 ? `<div class="muted small">Показаны первые 40 из ${list.length}. В плейлист сохранятся все.</div>` : ""}`;
+  }
+
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-impplay],[data-impsave]");
+    if (!b) return;
+    const I = S.imp, ids = I.ids.filter(track);
+    if (!ids.length) return;
+    if (b.dataset.impplay) { S.queue = ids.slice(); if (S.wave) S.wave.on = false; return playTrack(ids[0]); }
+    Library.importTracks(I.title || "Импорт", ids);
+  });
+
+  return { isLink, run, html, kind };
+})();
 
 /* ===== catalog.js ===== */
 // ============================================================
@@ -3300,7 +3436,7 @@ const Catalog = (() => {
     if (e.target.id !== "cq") return;
     S.cat.q = e.target.value;
     clearTimeout(timer);
-    timer = setTimeout(run, 450);
+    timer = setTimeout(() => (Importer.isLink(S.cat.q) ? Importer.run(S.cat.q.trim()) : run()), 450);
   });
   document.addEventListener("click", (e) => {
     const s = e.target.closest("[data-csrc]");
@@ -3324,6 +3460,7 @@ const Catalog = (() => {
 // Экран «Каталог»
 function viewCatalogParts() {
   const C = S.cat;
+  if (Importer.isLink(C.q)) return { meta: `<div class="muted small">Нашёл ссылку: сейчас достану из неё песни.</div>`, body: Importer.html() };
   const searching = !!C.q.trim();
   const srcs = searching ? `<div class="chips srcs">${Sources.LIST.filter(([k]) => Sources.avail(k)).map(([k, l]) => `<button class="chip ${C.src === k ? "on" : ""}" data-csrc="${k}">${l}</button>`).join("")}</div>` : "";
   const modes = Catalog.modes().map(([k, l]) => `<button class="chip ${!searching && C.mode === k ? "on" : ""}" data-cmode="${k}">${l}</button>`).join("");
@@ -3789,7 +3926,21 @@ const Library = (() => {
   });
 
   function reset() { S.lib = freshLib(); }
-  return { load, reset, loadPosts };
+  // Плейлист из списка песен (импорт по ссылке)
+  async function importTracks(title, ids) {
+    if (!me()) { toast("Сначала войдите"); return go("me"); }
+    const { data, error } = await c.from("playlists").insert({ title: (title || "Импорт").trim().slice(0, 40) }).select("id,title,created_at").single();
+    if (error || !data) return fail(error);
+    ids.forEach((id) => Catalog.persist(id));
+    const rows = ids.map((id) => ({ playlist_id: data.id, track_id: id }));
+    for (let i = 0; i < rows.length; i += 100) { const r = await c.from("playlist_tracks").insert(rows.slice(i, i + 100)); if (r.error) { fail(r.error); break; } }
+    L().playlists.unshift({ ...data, ids: ids.slice() });
+    L().open = data.id; S.tt = "lib";
+    toast("Плейлист сохранён: " + ids.length + " песен");
+    go("tracks");
+  }
+
+  return { load, reset, loadPosts, importTracks };
 })();
 
 // ---------- Экраны ----------

@@ -715,3 +715,9 @@ body.lyr-full #ytbox { display: none !important; }
 .chips.srcs::-webkit-scrollbar { display: none; }
 .chips.srcs .chip { flex: none; }
 #setBtn.on { border-color: var(--aura1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--aura1) 30%, transparent); }
+.card.imp { display: flex; flex-direction: column; gap: 6px; }
+.improw { margin-top: 8px; }
+.lyr-box p .w { transition: color 0.2s, text-shadow 0.3s; }
+.lyr-box p.on .w { color: var(--mu); }
+.lyr-box p.on .w.lit { color: var(--tx); text-shadow: 0 0 22px color-mix(in srgb, var(--aura1) 70%, transparent); }
+.lyr-box p.past .w { color: inherit; }
