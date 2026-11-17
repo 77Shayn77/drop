@@ -666,3 +666,45 @@ body.is-playing .sheet .art { animation: floaty 6s ease-in-out infinite; }
 .mood { flex: none; height: 34px; padding: 0 14px; border-radius: 17px; background: var(--glass); border: 1px solid var(--edge); font-weight: 800; font-size: 13px; }
 .mood.on { background: var(--tx); color: var(--bg); border-color: transparent; }
 @media (prefers-reduced-motion: reduce) { .blobs i, .blobs::after, .wc-bars i, .sheet .art { animation: none !important; } }
+
+/* ===== Riff 3: волна-кнопка, приветствие, анимации ===== */
+.h1 { background: linear-gradient(100deg, var(--tx) 55%, var(--aura1)); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.hello { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.streak { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; font-weight: 800; color: #0b0a12; background: linear-gradient(135deg, var(--hot), #ffd166); box-shadow: 0 8px 18px -10px var(--hot); }
+#view.enter > * { animation: rise 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+#view.enter > *:nth-child(2) { animation-delay: 0.04s; } #view.enter > *:nth-child(3) { animation-delay: 0.08s; } #view.enter > *:nth-child(4) { animation-delay: 0.12s; } #view.enter > *:nth-child(5) { animation-delay: 0.16s; } #view.enter > *:nth-child(n+6) { animation-delay: 0.2s; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
+#meBtn { padding: 0; overflow: hidden; }
+#meBtn .avatar { width: 34px !important; height: 34px !important; }
+#meBtn.on { border-color: var(--aura1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--aura1) 30%, transparent); }
+.orb .i-pause { display: none; } .orb.playing .i-pause { display: block; } .orb.playing .i-play { display: none; }
+.orb-b { position: relative; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: linear-gradient(135deg, var(--aura1), var(--aura2)); color: #fff; transition: background 1.2s; }
+.orb-b::before, .orb-b::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--aura1); opacity: 0; pointer-events: none; }
+.orb.playing .orb-b::before { animation: ring 2.4s ease-out infinite; } .orb.playing .orb-b::after { animation: ring 2.4s ease-out 1.2s infinite; }
+@keyframes ring { from { transform: scale(1); opacity: 0.7; } to { transform: scale(1.9); opacity: 0; } }
+.lyr-fs { margin-left: 8px; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--mu); flex: none; }
+.lyr-fs:hover { background: var(--card2); }
+.lyr.full { position: fixed; inset: 0; z-index: 60; border-radius: 0; padding: calc(18px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; border: 0; box-shadow: none; }
+.lyr.full::before { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--aura1) 50%, transparent), transparent 70%), radial-gradient(100% 60% at 100% 100%, color-mix(in srgb, var(--aura2) 42%, transparent), transparent 70%); pointer-events: none; }
+.lyr.full > * { position: relative; }
+.lyr.full .lyr-box { flex: 1; height: auto; padding: 38vh 0; gap: 22px; }
+.lyr.full .lyr-box p { font-size: clamp(26px, 7vw, 42px); line-height: 1.18; letter-spacing: -0.02em; }
+.lyr.full .lyr-box.plain { max-height: none; overflow-y: auto; font-size: 20px; padding: 10px 0 40px; }
+body.lyr-full #ytbox { display: none !important; }
+
+@media (max-width: 800px) {
+  .nav button[data-view="me"] { display: none; }
+  .nav .orb { overflow: visible; }
+  .nav .orb .orb-b { width: 58px; height: 58px; margin-top: -24px; margin-bottom: 1px; box-shadow: 0 14px 28px -8px var(--aura1), 0 0 0 5px color-mix(in srgb, var(--bg) 85%, transparent); }
+  .nav .orb svg { width: 24px; height: 24px; padding: 0; background: none !important; box-shadow: none !important; transform: none !important; border-radius: 0; }
+  .nav .orb { color: var(--tx); font-weight: 800; }
+  .themebox { gap: 6px; }
+}
+@media (min-width: 801px) {
+  #meBtn { display: none; }
+  .nav .orb { color: var(--tx); }
+  .nav .orb .orb-b { width: 28px; height: 28px; }
+  .nav .orb svg { width: 14px; height: 14px; }
+  .nav .orb:hover { background: var(--card); }
+  .nav .orb span:last-child { font-weight: 800; }
+}

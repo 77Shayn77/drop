@@ -584,11 +584,11 @@ Object.assign(ICON, {
 // Экраны: Моменты, Треки, Чаты, Я, плеер.
 // ============================================================
 const TABS = [
-  ["moments", "Лента"],
-  ["tracks", "Треки"],
+  ["moments", "Кадры"],
+  ["tracks", "Звук"],
   ["chats", "Чаты"],
-  ["rooms", "Сообщества"],
-  ["me", "Я"],
+  ["rooms", "Круги"],
+  ["me", "Мой Riff"],
 ];
 
 
@@ -625,10 +625,10 @@ function viewMoments() {
   else if (S.momentsErr) list = `<div class="alert">${esc(S.momentsErr)}</div>`;
   else if (!feedList().length)
     list = S.feed === "friends"
-      ? `<div class="empty">${ico("user", 30)}<br><b>У друзей пока нет постов.</b><br>Добавь друзей на вкладке «Я» → «Друзья».</div>`
+      ? `<div class="empty">${ico("user", 30)}<br><b>У друзей пока нет постов.</b><br>Добавь друзей на вкладке «Мой Riff» → «Друзья».</div>`
       : `<div class="empty">${ico("megaphone", 30)}<br><b>Здесь пока тихо.</b><br>Опубликуй первое фото и подпиши его музыкой.</div>`;
   else list = feedList().map(postCard).join("");
-  return `<header class="top"><h1 class="h1">Лента</h1><p class="muted">Фото, у которых есть саундтрек.</p></header>
+  return `<header class="top"><h1 class="h1">Кадры</h1>${Flair.hello()}</header>
   <section class="hero">
     <div><h2>Каждому кадру<br>свой саундтрек</h2><p>Выложи фото и подпиши его музыкой: друзья увидят кадр и услышат, как он звучит.</p></div>
     <button class="btn-dark" data-newpost="1">${ICON.camera} Новый пост</button>
@@ -641,7 +641,7 @@ function viewTracks() {
     .map(([k, l]) => `<button class="tab ${S.tt === k ? "on" : ""}" data-tt="${k}">${l}</button>`).join("");
   const add = S.tt === "songs" ? `<button class="btn-a sm" data-newtrack="1">${ICON.plus} Своя песня</button>` : "";
   const body = S.tt === "catalog" ? viewCatalog() : S.tt === "lib" ? viewLibrary() : ownTracks().map(trackCard).join("");
-  return `<header class="top row"><div class="grow"><h1 class="h1">Треки</h1></div>${add}</header>${Wave.html()}<div class="segs">${tabs}</div>${body}`;
+  return `<header class="top row"><div class="grow"><h1 class="h1">Звук</h1></div>${add}</header>${Wave.html()}<div class="segs">${tabs}</div>${body}`;
 }
 
 // ---------- Вход / регистрация ----------
@@ -679,7 +679,7 @@ function viewMe() {
   if (S.auth.mode === "recovery") return recoveryCard();
   if (!S.auth.user) return authCard();
   const p = S.auth.profile || {};
-  return `<header class="top"><h1 class="h1">Я</h1></header>
+  return `<header class="top"><h1 class="h1">Мой Riff</h1>${Flair.hello(true)}</header>
   <section class="card"><div class="row">${avatar(p, 64)}<div class="grow"><div class="title">${esc(p.display_name || p.username)}</div><div class="muted">@${esc(p.username)}</div></div></div></section>
   <button class="card person" data-view="friends">${ico("people", 26)}<div class="grow"><b>Друзья</b><div class="muted small">Друзей: ${Friends.friends().length}${Friends.incoming().length ? " · новых заявок: " + Friends.incoming().length : ""}</div></div>${Friends.incoming().length ? `<span class="badge">${Friends.incoming().length}</span>` : ""}</button>
   <section class="card form">
@@ -1292,7 +1292,7 @@ function roomInfo(r, owner) {
 
 function viewRooms() {
   const R = S.rooms;
-  if (!S.auth.user) return `<header class="top"><h1 class="h1">Сообщества</h1></header><div class="empty"><b>Чтобы вступать в группы и каналы, войдите.</b></div>` + authCard().replace(/<header[\s\S]*?<\/header>/, "");
+  if (!S.auth.user) return `<header class="top"><h1 class="h1">Круги</h1></header><div class="empty"><b>Чтобы вступать в группы и каналы, войдите.</b></div>` + authCard().replace(/<header[\s\S]*?<\/header>/, "");
   if (R.cur) {
     const r = R.cur, joined = !!R.role, owner = R.role === "owner";
     const foot = canPostHere()
@@ -2715,6 +2715,8 @@ const Lyrics = (() => {
   const shiftOf = (id) => shifts[id] || 0;
   const saveShift = () => { try { localStorage.setItem(OFF, JSON.stringify(shifts)); } catch (e) {} };
 
+  const FS_ICO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+  const FS_X = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   const clean = (s) => String(s || "").replace(/\s*[\(\[][^\)\]]*[\)\]]/g, "").replace(/\s+(feat|ft)\.?\s.*$/i, "").replace(/\s+/g, " ").trim();
 
   function parseLrc(text) {
@@ -2760,7 +2762,7 @@ const Lyrics = (() => {
 
   function html(t) {
     const c = cache[t.id];
-    const head = (extra) => `<div class="row"><b>${ico("mic", 18)} Текст</b>${extra || ""}</div>`;
+    const head = (extra) => `<div class="row"><b>${ico("mic", 18)} Текст</b>${extra || ""}<button class="lyr-fs" data-lyrfull="1" aria-label="Текст на весь экран">${FS_ICO}</button></div>`;
     if (!c || c.st === "load") return head() + `<div class="muted small">Ищем текст…</div>`;
     if (c.st === "none") return head() + `<div class="muted small">Текста для этой песни пока нет.</div>`;
     if (c.st === "err") return head() + `<div class="muted small">Не получилось загрузить текст.</div><button class="btn-s sm" data-lyrretry="1">Повторить</button>`;
@@ -2799,6 +2801,17 @@ const Lyrics = (() => {
     if (p && (jump || Date.now() - userAt > 3000)) box.scrollTo({ top: p.offsetTop - box.clientHeight / 2 + p.clientHeight / 2, behavior: jump ? "auto" : "smooth" });
   }
 
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-lyrfull]")) return;
+    const el = $("#lyr");
+    if (!el) return;
+    const on = el.classList.toggle("full");
+    document.body.classList.toggle("lyr-full", on);
+    const b = el.querySelector("[data-lyrfull]");
+    if (b) b.innerHTML = on ? FS_X : FS_ICO;
+    tick(true);
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { const el = $("#lyr"); if (el && el.classList.contains("full")) el.querySelector("[data-lyrfull]").click(); } });
   au.addEventListener("timeupdate", () => tick(false));
   au.addEventListener("seeked", () => tick(true));
 
@@ -3389,6 +3402,84 @@ const Wave = (() => {
   au.addEventListener("play", () => setTimeout(check, 300));
 
   return { html, start, stop, paint, check };
+})();
+
+/* ===== flair.js ===== */
+// ============================================================
+// Живые мелочи Riff: кнопка-«Волна» в меню, приветствие и серия дней,
+// свайп по мини-плееру, плавное появление экранов.
+// ============================================================
+const Flair = (() => {
+  const KEY = "riff-streak";
+  let st = { last: "", n: 0 };
+  try { st = Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { /* без памяти */ }
+  const day = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  const FLAME = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12.4 2.2c.4 3-1.2 4.6-2.7 6.3-1.4 1.6-2.7 3.1-2.7 5.5a5.4 5.4 0 0 0 10.8.4c0-2-.8-3.4-1.8-4.6.1 1.4-.4 2.4-1.3 2.9.6-3.4-.2-7.6-2.3-10.5z"/></svg>';
+
+  function touchDay() {
+    const now = new Date(), t = day(now), y = day(new Date(now.getTime() - 864e5));
+    if (st.last === t) return;
+    st.n = st.last === y ? st.n + 1 : 1; st.last = t;
+    try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* ок */ }
+  }
+  au.addEventListener("play", touchDay);
+
+  const days = (n) => (n % 10 === 1 && n % 100 !== 11 ? "день" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "дня" : "дней");
+  function hello(me) {
+    const h = new Date().getHours();
+    const g = h < 5 ? "Доброй ночи" : h < 12 ? "Доброе утро" : h < 18 ? "Добрый день" : "Добрый вечер";
+    const p = S.auth && S.auth.profile;
+    const name = p && (p.display_name || p.username);
+    const alive = st.last && (st.last === day(new Date()) || st.last === day(new Date(Date.now() - 864e5)));
+    const chip = alive && st.n >= 1 ? `<span class="streak" title="Дней подряд с музыкой">${FLAME} ${st.n} ${days(st.n)} подряд</span>` : "";
+    if (!name) return `<p class="muted hello">Фото, у которых есть саундтрек.</p>`;
+    return `<p class="muted hello">${g}, ${esc(name)}${me ? "" : "!"} ${chip}</p>`;
+  }
+
+  // Кнопка «Волна» в середине меню
+  const orb = `<button class="orb" data-orb="1" aria-label="Моя волна: играть или пауза"><span class="orb-b">${ICON.play}${ICON.pause}</span><span>Волна</span></button>`;
+  function navHtml(items) {
+    const a = Array.isArray(items) ? items : String(items).split("</button>").filter(Boolean).map((x) => x + "</button>");
+    a.splice(2, 0, orb);
+    return a.join("");
+  }
+
+  function after(keep) {
+    const b = $("#meBtn");
+    if (b) {
+      const p = S.auth && S.auth.user && S.auth.profile;
+      b.innerHTML = p ? avatar(p, 34) : ico("user", 20);
+      b.classList.toggle("on", S.view === "me" || S.view === "friends");
+    }
+    if (!keep) { const v = $("#view"); v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter"); }
+  }
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-orb]")) return;
+    if (!S.nowId && !S.wave.on) return Wave.start();
+    if (!S.nowId) return Wave.start();
+    toggleNow();
+  });
+  setInterval(() => { const o = $(".orb"); if (o) o.classList.toggle("playing", !!(S.playing && S.nowId)); }, 400);
+
+  // Свайп по мини-плееру: влево = следующая, вправо = предыдущая
+  let sx = 0, sy = 0, dx = 0, drag = false, swiped = 0;
+  const pl = $("#player");
+  pl.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; dx = 0; drag = false; pl.style.transition = "none"; }, { passive: true });
+  pl.addEventListener("touchmove", (e) => {
+    const t = e.touches[0], mx = t.clientX - sx, my = t.clientY - sy;
+    if (!drag && Math.abs(mx) > 12 && Math.abs(mx) > Math.abs(my) * 1.4) drag = true;
+    if (!drag) return;
+    dx = mx; pl.style.translate = Math.round(dx * 0.6) + "px 0";
+  }, { passive: true });
+  pl.addEventListener("touchend", () => {
+    pl.style.transition = "translate 0.25s ease"; pl.style.translate = "0 0";
+    if (drag && Math.abs(dx) > 70 && S.nowId) { swiped = Date.now(); step(dx < 0 ? 1 : -1); }
+    drag = false;
+  });
+  pl.addEventListener("click", (e) => { if (Date.now() - swiped < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
+
+  return { hello, navHtml, after, streak: () => st.n };
 })();
 
 /* ===== artist.js ===== */
@@ -4091,9 +4182,10 @@ let onInputTimer = null;
 
 function render(keep) {
   const y = window.scrollY;
-  $("#nav").innerHTML = TABS.map(([k, l]) =>
-    `<button data-view="${k}" class="${S.view === k || (k === "me" && S.view === "friends") || (k === "tracks" && S.view === "artist") ? "on" : ""}">${ICON[k]}<span>${l}</span>${(k === "chats" && unreadTotal()) || (k === "me" && Friends.incoming().length) ? `<i class="dot"></i>` : ""}</button>`).join("");
+  $("#nav").innerHTML = Flair.navHtml(TABS.map(([k, l]) =>
+    `<button data-view="${k}" class="${S.view === k || (k === "me" && S.view === "friends") || (k === "tracks" && S.view === "artist") ? "on" : ""}">${ICON[k]}<span>${l}</span>${(k === "chats" && unreadTotal()) || (k === "me" && Friends.incoming().length) ? `<i class="dot"></i>` : ""}</button>`).join(""));
   $("#view").innerHTML = VIEW[S.view]();
+  Flair.after(keep);
   sync(true);
   Notifs.paint();
   Plays.paint();
