@@ -708,3 +708,10 @@ body.lyr-full #ytbox { display: none !important; }
   .nav .orb:hover { background: var(--card); }
   .nav .orb span:last-child { font-weight: 800; }
 }
+
+/* Источники в поиске и значок источника на карточке */
+.srcb { display: inline-block; margin-top: 6px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; color: var(--at); border: 1px solid color-mix(in srgb, var(--a) 40%, transparent); }
+.chips.srcs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.chips.srcs::-webkit-scrollbar { display: none; }
+.chips.srcs .chip { flex: none; }
+#setBtn.on { border-color: var(--aura1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--aura1) 30%, transparent); }
