@@ -566,3 +566,103 @@ body.yt-on #ytbox { display: block; }
 .pbar { cursor: pointer; }
 .sheet-in .art { width: min(300px, 70vw, 34dvh); }
 .pbar::after { content: ""; position: absolute; left: 0; right: 0; top: -12px; bottom: -4px; }
+
+/* =====================================================================
+   Riff 2 · редизайн (v14): стекло, парящее меню, живая «Аура»
+   ===================================================================== */
+:root { --aura1: var(--a); --aura2: var(--a2); --glass: color-mix(in srgb, var(--card) 62%, transparent); --edge: color-mix(in srgb, var(--tx) 11%, transparent); --r: 26px; }
+body { background: var(--bg); }
+
+/* Живой фон: три пятна, цвета берутся от обложки играющей песни */
+.blobs i { transition: background-color 1.8s ease, opacity 1.2s ease; animation: drift 26s ease-in-out infinite alternate; }
+.blobs i:nth-child(1) { background: var(--aura1); opacity: 0.34; top: -28vmax; left: -18vmax; }
+.blobs i:nth-child(2) { background: var(--aura2); opacity: 0.30; bottom: -32vmax; right: -22vmax; animation-duration: 32s; animation-direction: alternate-reverse; }
+.blobs::after { content: ""; position: absolute; width: 46vmax; height: 46vmax; left: 30%; top: 38%; border-radius: 50%; filter: blur(110px); background: var(--aura1); opacity: 0; transition: opacity 1.6s ease, background-color 1.8s ease; }
+body.aura-on .blobs::after { opacity: 0.16; animation: breathe 5.5s ease-in-out infinite; animation-play-state: paused; }
+body.is-playing .blobs::after { animation-play-state: running; }
+body.is-playing .blobs i:nth-child(1) { opacity: 0.42; }
+[data-theme="light"] .blobs i:nth-child(1), [data-theme="light"] .blobs i:nth-child(2) { opacity: 0.30; }
+@keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(6vmax, 5vmax, 0) scale(1.12); } }
+@keyframes breathe { 0%, 100% { transform: scale(0.9); } 50% { transform: scale(1.18); } }
+
+/* Заголовки страниц */
+.h1 { font-size: 34px; letter-spacing: -0.04em; }
+.top p { font-size: 14px; }
+.sec { font-size: 15px; letter-spacing: -0.01em; }
+
+/* Стеклянные карточки */
+.card { background: var(--glass); border: 1px solid var(--edge); border-radius: var(--r); backdrop-filter: blur(18px) saturate(1.3); -webkit-backdrop-filter: blur(18px) saturate(1.3); box-shadow: 0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset, 0 18px 40px -26px rgba(0, 0, 0, 0.55); }
+.empty { border-radius: var(--r); background: color-mix(in srgb, var(--card) 35%, transparent); }
+.field input, .field textarea, .cap-in { background: color-mix(in srgb, var(--bg) 70%, transparent); border-width: 1.5px; }
+.search { background: var(--glass); border: 1px solid var(--edge); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); height: 50px; }
+.segs { background: var(--glass); border: 1px solid var(--edge); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-radius: 18px; }
+.tab { border-radius: 14px; transition: background-color 0.25s, color 0.25s; }
+.tab.on { box-shadow: 0 8px 20px -10px var(--a); }
+.chip { background: var(--glass); border: 1px solid var(--edge); }
+.chip.on { box-shadow: 0 8px 18px -10px var(--a); }
+.btn-a { box-shadow: 0 14px 28px -14px var(--a); }
+.playbtn { box-shadow: 0 10px 24px -10px var(--aura1); }
+.hero { position: relative; overflow: hidden; border-radius: 30px; }
+.hero::after { content: ""; position: absolute; right: -40px; top: -40px; width: 180px; height: 180px; border-radius: 50%; background: rgba(255, 255, 255, 0.28); filter: blur(2px); }
+.hero > * { position: relative; z-index: 1; }
+
+/* Шапка и кнопки справа: только значки, стеклянные */
+.theme { border: 1px solid var(--edge); background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-radius: 16px; }
+.logo { box-shadow: 0 10px 24px -10px var(--a); }
+
+/* Боковое меню на компьютере */
+@media (min-width: 801px) {
+  .side { padding: 18px 14px; border-radius: 30px; background: var(--glass); border: 1px solid var(--edge); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+  .nav button.on { box-shadow: 0 12px 26px -12px var(--a); }
+}
+
+/* Телефон: парящее меню-капсула и мини-плеер над ним */
+@media (max-width: 800px) {
+  .shell { padding: 12px 14px 190px; }
+  .side { padding: 2px 0 4px; }
+  .themebox #theme { width: 42px; padding: 0; font-size: 0; gap: 0; }
+  .themebox #theme svg { margin: 0; }
+  .nav { left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); padding: 6px; gap: 2px; border: 1px solid var(--edge); border-radius: 30px; background: color-mix(in srgb, var(--card) 74%, transparent); backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4); box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.55), 0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset; }
+  .nav button { min-height: 56px; border-radius: 22px; gap: 1px; font-size: 10.5px; letter-spacing: 0.01em; transition: color 0.25s; }
+  .nav button svg { width: 44px; height: 30px; padding: 4px 10px; border-radius: 15px; transition: background-color 0.3s, transform 0.3s; }
+  .nav button.on { background: none; color: var(--tx); box-shadow: none; }
+  .nav button.on svg { background: linear-gradient(135deg, var(--a), var(--a2)); color: #fff; box-shadow: 0 8px 18px -8px var(--a); transform: translateY(-1px); }
+  .nav .dot { left: calc(50% + 8px); top: 4px; }
+  .player { bottom: calc(86px + env(safe-area-inset-bottom)); border-radius: 26px; }
+  #toast { bottom: 170px; }
+}
+
+/* Мини-плеер: стекло и свечение цветом обложки */
+.player { background: color-mix(in srgb, var(--card) 70%, transparent); border: 1px solid var(--edge); backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4); box-shadow: 0 18px 40px -14px rgba(0, 0, 0, 0.6), 0 0 0 1px color-mix(in srgb, var(--aura1) 22%, transparent), 0 10px 40px -18px var(--aura1); }
+.pbar { height: 3px; background: color-mix(in srgb, var(--tx) 14%, transparent); }
+.pbar span { background: linear-gradient(90deg, var(--aura1), var(--aura2)); }
+body.is-playing .player .cover { animation: spinpop 0.6s ease both; }
+@keyframes spinpop { from { transform: scale(0.9); } to { transform: scale(1); } }
+
+/* Большой плеер: фон-размытая обложка и крупнее арт */
+.sheet { background: var(--bg); }
+.sheet::before { content: ""; position: fixed; inset: 0; background: radial-gradient(120% 60% at 50% -5%, color-mix(in srgb, var(--aura1) 55%, transparent), transparent 70%), radial-gradient(90% 50% at 100% 100%, color-mix(in srgb, var(--aura2) 40%, transparent), transparent 70%); transition: opacity 1s; pointer-events: none; }
+.sheet-in { z-index: 1; }
+.sheet-in::before { display: none; }
+.art { border-radius: 36px; box-shadow: 0 30px 60px -20px color-mix(in srgb, var(--aura1) 70%, transparent), 0 0 0 1px var(--edge); }
+body.is-playing .sheet .art { animation: floaty 6s ease-in-out infinite; }
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+.close { background: var(--glass); border: 1px solid var(--edge); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.wave b { transition: background-color 0.2s; }
+
+/* «Моя волна» */
+.wavecard { position: relative; overflow: hidden; display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 30px; color: #fff; background: linear-gradient(135deg, var(--aura1), var(--aura2)); box-shadow: 0 22px 44px -22px var(--aura1); transition: background 1.2s; }
+.wavecard .wc-t { flex: 1; min-width: 0; }
+.wavecard h3 { margin: 0; font-family: "Unbounded", sans-serif; font-weight: 600; font-size: 20px; letter-spacing: -0.03em; }
+.wavecard p { margin: 4px 0 0; font-weight: 700; font-size: 13px; opacity: 0.9; }
+.wavecard .wc-go { flex: none; width: 58px; height: 58px; border-radius: 50%; background: #0b0a12; color: var(--hot); display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 10px 22px -8px rgba(0, 0, 0, 0.5); }
+.wavecard .wc-bars { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; display: flex; align-items: flex-end; justify-content: space-between; gap: 3px; padding: 0 14px; opacity: 0.22; pointer-events: none; }
+.wavecard .wc-bars i { flex: 1; border-radius: 3px 3px 0 0; background: #fff; height: 30%; animation: wbar 1.6s ease-in-out infinite alternate; animation-play-state: paused; }
+.wavecard.on .wc-bars i { animation-play-state: running; }
+@keyframes wbar { from { height: 14%; } to { height: 90%; } }
+.wavecard > *:not(.wc-bars) { position: relative; z-index: 1; }
+.moods { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: none; }
+.moods::-webkit-scrollbar { display: none; }
+.mood { flex: none; height: 34px; padding: 0 14px; border-radius: 17px; background: var(--glass); border: 1px solid var(--edge); font-weight: 800; font-size: 13px; }
+.mood.on { background: var(--tx); color: var(--bg); border-color: transparent; }
+@media (prefers-reduced-motion: reduce) { .blobs i, .blobs::after, .wc-bars i, .sheet .art { animation: none !important; } }

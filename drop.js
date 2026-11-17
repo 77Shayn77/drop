@@ -641,7 +641,7 @@ function viewTracks() {
     .map(([k, l]) => `<button class="tab ${S.tt === k ? "on" : ""}" data-tt="${k}">${l}</button>`).join("");
   const add = S.tt === "songs" ? `<button class="btn-a sm" data-newtrack="1">${ICON.plus} Своя песня</button>` : "";
   const body = S.tt === "catalog" ? viewCatalog() : S.tt === "lib" ? viewLibrary() : ownTracks().map(trackCard).join("");
-  return `<header class="top row"><div class="grow"><h1 class="h1">Треки</h1></div>${add}</header><div class="segs">${tabs}</div>${body}`;
+  return `<header class="top row"><div class="grow"><h1 class="h1">Треки</h1></div>${add}</header>${Wave.html()}<div class="segs">${tabs}</div>${body}`;
 }
 
 // ---------- Вход / регистрация ----------
@@ -3000,6 +3000,76 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/* ===== aura.js ===== */
+// ============================================================
+// «Аура»: цвета всего сайта подстраиваются под обложку играющей песни.
+// Если картинку прочитать нельзя, берём цвета песни из её названия.
+// ============================================================
+const Aura = (() => {
+  const root = document.documentElement, cache = new Map();
+  let cur = null;
+
+  function set(a, b) { root.style.setProperty("--aura1", a); root.style.setProperty("--aura2", b); }
+  function clear() { root.style.removeProperty("--aura1"); root.style.removeProperty("--aura2"); }
+
+  // Две самые яркие «семьи» цвета на картинке
+  function fromImage(url) {
+    return new Promise((ok) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const W = 32, c = document.createElement("canvas"); c.width = c.height = W;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          const yt = /ytimg\.com/.test(url);
+          const sy = yt ? img.naturalHeight * 0.14 : 0, sh = yt ? img.naturalHeight * 0.72 : img.naturalHeight;
+          g.drawImage(img, 0, sy, img.naturalWidth, sh, 0, 0, W, W);
+          const d = g.getImageData(0, 0, W, W).data, B = new Array(12).fill(0).map(() => ({ w: 0, s: 0, l: 0 }));
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i] / 255, gg = d[i + 1] / 255, b = d[i + 2] / 255, mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), l = (mx + mn) / 2, dl = mx - mn;
+            if (dl < 0.12 || l < 0.12 || l > 0.92) continue;
+            const s = dl / (1 - Math.abs(2 * l - 1));
+            let h = mx === r ? ((gg - b) / dl) % 6 : mx === gg ? (b - r) / dl + 2 : (r - gg) / dl + 4;
+            h = ((h * 60) + 360) % 360;
+            const k = Math.floor(h / 30) % 12, w = s * (1 - Math.abs(l - 0.5));
+            B[k].w += w; B[k].s += w * h;
+          }
+          const order = B.map((x, i) => [x, i]).filter(([x]) => x.w > 0).sort((p, q) => q[0].w - p[0].w);
+          if (!order.length) return ok(null);
+          const h1 = order[0][0].s / order[0][0].w;
+          const sec = order.find(([, i]) => { const dd = Math.abs(i - order[0][1]); return Math.min(dd, 12 - dd) >= 2; });
+          const h2 = sec ? sec[0].s / sec[0].w : (h1 + 50) % 360;
+          ok([`hsl(${Math.round(h1)} 82% 56%)`, `hsl(${Math.round(h2)} 80% 54%)`]);
+        } catch (e) { ok(null); }
+      };
+      img.onerror = () => ok(null);
+      img.src = url;
+    });
+  }
+
+  async function apply() {
+    const t = track(S.nowId);
+    const id = t ? t.id : null;
+    if (id === cur) return;
+    cur = id;
+    document.body.classList.toggle("aura-on", !!t);
+    if (!t) return clear();
+    if (cache.has(id)) { const c = cache.get(id); return set(c[0], c[1]); }
+    set(t.c1, t.c2);
+    cache.set(id, [t.c1, t.c2]);
+    if (t.cover_url) {
+      const c = await fromImage(t.cover_url);
+      if (c) { cache.set(id, c); if (cur === id) set(c[0], c[1]); }
+    }
+  }
+
+  setInterval(() => {
+    apply();
+    document.body.classList.toggle("is-playing", !!(S.playing && S.nowId));
+  }, 500);
+  return { apply, set, clear };
+})();
+
 /* ===== catalog.js ===== */
 // ============================================================
 // Каталог музыки (Audius, бесплатно, без ключа).
@@ -3224,6 +3294,102 @@ function viewCatalog() {
   return `<label class="search">${ICON.search}<input id="cq" placeholder="Название или исполнитель" value="${esc(C.q)}" autocomplete="off"></label>
     <div id="cmeta">${h.meta}</div><div id="cres">${h.body}</div>`;
 }
+
+/* ===== wave.js ===== */
+// ============================================================
+// «Моя волна»: бесконечное радио. Собирает песни из твоих сохранённых,
+// хитов и каталога, а когда очередь подходит к концу, сама добавляет новые.
+// ============================================================
+const Wave = (() => {
+  const MOODS = [["any", "Любая"], ["calm", "Спокойная"], ["energy", "Заряд"], ["night", "Ночь"]];
+  const GEN = { calm: ["Lo-Fi", "Ambient"], energy: ["Electronic", "Hip-Hop/Rap"], night: ["Jazz", "R&B/Soul"] };
+  S.wave = { on: false, q: null, mood: "any", busy: false, seen: new Set() };
+
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const regYt = (rows) => rows.map((r) => Catalog.reg(Catalog.make(r)).id);
+
+  async function pool(mood) {
+    const out = [];
+    if (mood === "any" || !GEN[mood]) {
+      const mine = [...S.lib.saved].filter((id) => track(id));
+      let charts = [];
+      if (YtApi.enabled()) {
+        for (const region of ["RU", "US"]) { try { charts = charts.concat(regYt(await YtApi.chart(region))); } catch (e) { /* пропускаем */ } }
+      }
+      if (!charts.length) { try { charts = (await Catalog.get("/tracks/trending?time=week&limit=40", 300)).map(Catalog.fromApi).map((t) => t.id); } catch (e) { /* нет сети */ } }
+      const a = shuffle(charts.slice()), b = shuffle(mine.slice());
+      while (a.length || b.length) { if (b.length) out.push(b.pop()); for (let k = 0; k < 2 && a.length; k++) out.push(a.pop()); }
+    } else {
+      for (const g of GEN[mood]) { try { out.push(...(await Catalog.get(`/tracks/trending?time=week&limit=30&genre=${encodeURIComponent(g)}`, 200)).map(Catalog.fromApi).map((t) => t.id)); } catch (e) { /* пропускаем */ } }
+      shuffle(out);
+    }
+    return out.filter((id) => track(id));
+  }
+
+  async function more(n) {
+    const W = S.wave;
+    if (W.busy) return;
+    W.busy = true;
+    try {
+      let ids = (await pool(W.mood)).filter((id) => !W.seen.has(id));
+      if (!ids.length) { W.seen.clear(); ids = await pool(W.mood); }
+      ids = ids.slice(0, n);
+      ids.forEach((id) => W.seen.add(id));
+      if (W.on && W.q === S.queue) { const have = new Set(S.queue); S.queue.push(...ids.filter((id) => !have.has(id))); }
+      return ids;
+    } finally { W.busy = false; }
+  }
+
+  async function start() {
+    const W = S.wave;
+    if (W.busy) return;
+    toast("Собираю волну…");
+    W.seen.clear();
+    const ids = await more(24);
+    if (!ids || !ids.length) return toast("Не получилось собрать волну: проверь интернет");
+    S.queue = ids.slice(); W.q = S.queue; W.on = true;
+    paint();
+    playTrack(ids[0]);
+  }
+
+  function stop() { S.wave.on = false; S.wave.q = null; paint(); }
+
+  function check() {
+    const W = S.wave;
+    if (!W.on) return;
+    if (W.q !== S.queue) return stop();
+    const i = S.queue.indexOf(S.nowId);
+    if (i >= 0 && S.queue.length - i <= 4) more(16);
+  }
+
+  function html() {
+    const W = S.wave, on = W.on;
+    return `<section class="wavecard ${on ? "on" : ""}" id="wavecard"><div class="wc-bars">${Array.from({ length: 28 }, (_, i) => `<i style="animation-delay:-${((i * 37) % 16) / 10}s"></i>`).join("")}</div>
+      <div class="wc-t"><h3>Моя волна</h3><p>${on ? "Играет сейчас. Нажми, чтобы остановить." : "Бесконечная музыка под настроение."}</p></div>
+      <button class="wc-go" data-wave="${on ? "stop" : "start"}" aria-label="${on ? "Остановить волну" : "Включить волну"}">${on ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>' : '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.8l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>'}</button></section>
+      <div class="moods">${MOODS.map(([k, l]) => `<button class="mood ${W.mood === k ? "on" : ""}" data-wmood="${k}">${l}</button>`).join("")}</div>`;
+  }
+
+  function paint() {
+    const el = document.getElementById("wavecard");
+    if (!el) return;
+    const box = el.parentNode, tmp = document.createElement("div");
+    tmp.innerHTML = html();
+    const old = [el, el.nextElementSibling];
+    [...tmp.children].forEach((n) => box.insertBefore(n, el));
+    old.forEach((n) => n && n.remove());
+  }
+
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-wave],[data-wmood]");
+    if (!b) return;
+    if (b.dataset.wmood) { S.wave.mood = b.dataset.wmood; if (S.wave.on) start(); else paint(); return; }
+    if (b.dataset.wave === "stop") { stop(); au.pause(); } else start();
+  });
+  au.addEventListener("play", () => setTimeout(check, 300));
+
+  return { html, start, stop, paint, check };
+})();
 
 /* ===== artist.js ===== */
 // ============================================================
