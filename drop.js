@@ -637,11 +637,12 @@ function viewMoments() {
 }
 
 function viewTracks() {
-  const tabs = [["songs", "Песни Riff"], ["catalog", "Каталог"], ["lib", "Библиотека"]]
+  if (S.tt === "songs") S.tt = "catalog";
+  const tabs = [["catalog", "Слушать"], ["lib", "Библиотека"]]
     .map(([k, l]) => `<button class="tab ${S.tt === k ? "on" : ""}" data-tt="${k}">${l}</button>`).join("");
-  const add = S.tt === "songs" ? `<button class="btn-a sm" data-newtrack="1">${ICON.plus} Своя песня</button>` : "";
-  const body = S.tt === "catalog" ? viewCatalog() : S.tt === "lib" ? viewLibrary() : ownTracks().map(trackCard).join("");
-  return `<header class="top row"><div class="grow"><h1 class="h1">Музыка</h1></div>${add}</header>${Wave.html()}<div class="segs">${tabs}</div>${body}`;
+  const add = `<button class="btn-a sm" data-newtrack="1">${ICON.plus} Своя песня</button>`;
+  const body = S.tt === "catalog" ? viewCatalog() : viewLibrary();
+  return `<header class="top row"><div class="grow"><h1 class="h1">Музыка</h1></div>${add}</header><div class="segs">${tabs}</div>${body}`;
 }
 
 // ---------- Вход / регистрация ----------
@@ -3126,8 +3127,8 @@ const Aura = (() => {
 // ============================================================
 const Sources = (() => {
   const jmKey = () => (window.DROP_CONFIG && window.DROP_CONFIG.jamendoKey) || "";
-  const LIST = [["all", "Везде"], ["yt", "YouTube"], ["au", "Audius"], ["it", "Apple Music"], ["jm", "Jamendo"]];
-  const avail = (k) => k === "all" || k === "au" || (k === "yt" && YtApi.enabled()) || k === "it" || (k === "jm" && !!jmKey());
+  const LIST = [["all", "Везде"], ["riff", "Riff"], ["yt", "YouTube"], ["au", "Audius"], ["it", "Apple Music"], ["jm", "Jamendo"]];
+  const avail = (k) => k === "all" || k === "riff" || k === "au" || (k === "yt" && YtApi.enabled()) || k === "it" || (k === "jm" && !!jmKey());
   const NAMES = { yt: "YouTube", au: "Audius", it: "Apple Music · превью 30 с", jm: "Jamendo" };
   const of = (id) => String(id || "").slice(0, 2);
 
@@ -3166,7 +3167,7 @@ const Sources = (() => {
 
   return { itunesLookup, LIST, avail, NAMES, of, itunes, jamendo, jmKey };
 })();
-const srcName = (t) => (t && t.ext ? Sources.NAMES[Sources.of(t.id)] || "" : "");
+const srcName = (t) => { const n = t && t.ext ? Sources.NAMES[Sources.of(t.id)] || "" : ""; return n && String(t.genre || "").toLowerCase() === n.toLowerCase() ? "" : n; };
 
 /* ===== importer.js ===== */
 // ============================================================
@@ -3272,7 +3273,7 @@ const Importer = (() => {
 const Catalog = (() => {
   const API = "https://api.audius.co/v1", APP = "DROPAPP";
   const GENRES = [["", "Все жанры"], ["Electronic", "Электроника"], ["Hip-Hop/Rap", "Хип-хоп"], ["Pop", "Поп"], ["Rock", "Рок"], ["Lo-Fi", "Лоу-фай"], ["Ambient", "Эмбиент"], ["Jazz", "Джаз"], ["R&B/Soul", "R&B"], ["Trap", "Трэп"], ["House", "Хаус"]];
-  const MODES = [["ru", "Хиты России"], ["world", "Хиты мира"], ["live", "В Riff сейчас"], ["top", "Популярное у нас"], ["now", "Независимые"]];
+  const MODES = [["ru", "Хиты России"], ["world", "Хиты мира"], ["riff", "Песни Riff"], ["live", "Сейчас слушают"], ["top", "Популярное у нас"], ["now", "Независимые"]];
   const modes = () => MODES.filter(([k]) => YtApi.enabled() || (k !== "ru" && k !== "world"));
   const TIMES = [["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]];
   const persisted = new Set();
@@ -3358,15 +3359,19 @@ const Catalog = (() => {
         let yrows = [], yerr = null;
         if (YtApi.enabled()) { try { yrows = await YtApi.search(q); } catch (e) { yerr = e; } }
         const [rows, us, it, jm] = await Promise.all(jobs);
+        const ql = q.toLowerCase();
+        C.own = TRACKS.filter((t) => !t.ext && ((t.title || "").toLowerCase().includes(ql) || (t.artist || "").toLowerCase().includes(ql))).map((t) => t.id);
         C.items = regYt(yrows);
         C.items2 = rows.map(fromApi).map((t) => t.id);
         C.items3 = it.map((r) => reg(make(r)).id);
         C.items4 = jm.map((r) => reg(make(r)).id);
         C.artists = (Array.isArray(us) ? us : []).filter((u) => (u.track_count || 0) > 0).slice(0, 6).map(person);
-        if (yerr && !C.items2.length && !C.items3.length && !C.items4.length) throw yerr;
+        if (yerr && !C.items2.length && !C.items3.length && !C.items4.length && !C.own.length) throw yerr;
         if (yerr) C.note = YtApi.friendly(yerr); else C.note = "";
       } else if (C.mode === "ru" || C.mode === "world") {
         C.items = regYt(await YtApi.chart(C.mode === "ru" ? "RU" : "US"));
+      } else if (C.mode === "riff") {
+        C.items = TRACKS.filter((t) => !t.ext).map((t) => t.id);
       } else if (C.mode === "live") {
         C.live = await loadLive();
         C.items = C.live.map((x) => x.id);
@@ -3468,23 +3473,23 @@ function viewCatalogParts() {
     ? `<div class="chips">${Catalog.TIMES.map(([k, l]) => `<button class="chip sm ${C.time === k ? "on" : ""}" data-ctime="${k}">${l}</button>`).join("")}</div>
        <div class="chips">${Catalog.GENRES.map(([k, l]) => `<button class="chip sm ${C.genre === k ? "on" : ""}" data-cgenre="${esc(k)}">${l}</button>`).join("")}</div>`
     : "";
-  const hint = searching ? "Ищем сразу во всех источниках: YouTube, Audius, Apple Music" + (Sources.jmKey() ? ", Jamendo" : "") : C.mode === "ru" ? "Самые популярные клипы и песни в России сейчас. Играют целиком через YouTube." : C.mode === "world" ? "Самое популярное в мире сейчас. Играют целиком через YouTube." : C.mode === "live" ? "Песни, которые другие слушают в Riff прямо сейчас." : C.mode === "top" ? "Песни, которые чаще всего слушают у нас." : "Независимые исполнители с Audius. Играют целиком, место у нас не занимают.";
+  const hint = !searching && C.mode === "riff" ? "Песни, которые загрузили в Riff." : searching ? "Ищем сразу во всех источниках: YouTube, Audius, Apple Music" + (Sources.jmKey() ? ", Jamendo" : "") : C.mode === "ru" ? "Самые популярные клипы и песни в России сейчас. Играют целиком через YouTube." : C.mode === "world" ? "Самое популярное в мире сейчас. Играют целиком через YouTube." : C.mode === "live" ? "Песни, которые другие слушают в Riff прямо сейчас." : C.mode === "top" ? "Песни, которые чаще всего слушают у нас." : "Независимые исполнители с Audius. Играют целиком, место у нас не занимают.";
   const items = C.items.map(track).filter(Boolean), items2 = (C.items2 || []).map(track).filter(Boolean);
   const who = (id) => { const x = C.live.find((l) => l.id === id); return x ? `<div class="listen">${x.who.slice(0, 5).map((p) => `<button data-profile="${p.id}" title="${esc(p.display_name || p.username)}">${avatar(p, 24)}</button>`).join("")}<span class="muted small">${x.who.length === 1 ? esc(x.who[0].display_name || x.who[0].username) + " слушает" : x.who.length + " слушают"}</span></div>` : ""; };
   const artists = searching && C.artists.length
     ? `<h3 class="sec">Исполнители</h3><div class="artrow">${C.artists.map((u) => `<button class="card artchip" data-artist="au:${esc(u.id)}">${avatar({ avatar_url: u.pic, display_name: u.name }, 48)}<b class="ell">${esc(u.name)}</b><span class="muted small">${fmtN(u.followers)} подписчиков</span></button>`).join("")}</div>`
     : "";
-  const empty = C.mode === "live" && !searching ? `Сейчас никто не слушает музыку.<br><span class="small">Включи что-нибудь: другие увидят это здесь.</span>` : C.mode === "top" && !searching ? `Пока никто ничего не прослушал.<br><span class="small">Включи песню из каталога: она появится здесь.</span>` : "Ничего не нашли.";
+  const empty = C.mode === "riff" && !searching ? "Пока нет песен." : C.mode === "live" && !searching ? `Сейчас никто не слушает музыку.<br><span class="small">Включи что-нибудь: другие увидят это здесь.</span>` : C.mode === "top" && !searching ? `Пока никто ничего не прослушал.<br><span class="small">Включи песню из каталога: она появится здесь.</span>` : "Ничего не нашли.";
   let body = "";
   if (C.loading && !items.length && !items2.length) body = skeletonPost();
   else if (searching) {
     const sec = (k, label, list) => (C.src === "all" || C.src === k) && list.length ? `<h3 class="sec">${label} <span class="muted small">· ${list.length}</span></h3>` + list.map(trackCard).join("") : "";
     const items3 = (C.items3 || []).map(track).filter(Boolean), items4 = (C.items4 || []).map(track).filter(Boolean);
-    body = sec("yt", "YouTube", items) + ((C.src === "all" || C.src === "au") && C.artists.length ? artists : "") + sec("au", "Audius", items2) + sec("jm", "Jamendo · целиком", items4) + sec("it", "Apple Music · превью 30 секунд", items3);
+    body = sec("riff", "Песни Riff", (C.own || []).map(track).filter(Boolean)) + sec("yt", "YouTube", items) + ((C.src === "all" || C.src === "au") && C.artists.length ? artists : "") + sec("au", "Audius", items2) + sec("jm", "Jamendo · целиком", items4) + sec("it", "Apple Music · превью 30 секунд", items3);
     if (!body && C.started && !C.err && !C.loading) body = `<div class="empty">${empty}</div>`;
   } else if (items.length) body = items.map((t) => trackCard(t) + (C.mode === "live" ? who(t.id) : "")).join("");
   else if (C.started && !C.err && !C.loading) body = `<div class="empty">${empty}</div>`;
-  const meta = `<div class="muted small">${hint}</div>${srcs}<div class="chips">${searching ? "" : modes}</div>${extra}
+  const meta = `${searching ? "" : Wave.html()}<div class="muted small">${hint}</div>${srcs}${searching ? "" : `<div class="chips modes">${modes}</div>`}${extra}
     ${C.err ? `<div class="alert">${esc(C.err)}<br><button class="btn-s sm" data-crefresh="1">Повторить</button></div>` : ""}
     ${!C.err && C.note ? `<div class="alert">${esc(C.note)}</div>` : ""}`;
   return { meta, body };
@@ -3496,7 +3501,7 @@ function viewCatalog() {
   const C = S.cat;
   if (!C.started) setTimeout(() => Catalog.run(), 0);
   const h = viewCatalogParts();
-  return `<label class="search">${ICON.search}<input id="cq" placeholder="Искать везде: название или исполнитель" value="${esc(C.q)}" autocomplete="off"></label>
+  return `<label class="search">${ICON.search}<input id="cq" placeholder="Поиск песен и исполнителей" value="${esc(C.q)}" autocomplete="off"></label>
     <div id="cmeta">${h.meta}</div><div id="cres">${h.body}</div>`;
 }
 
@@ -3516,7 +3521,7 @@ const Wave = (() => {
   async function pool(mood) {
     const out = [];
     if (mood === "any" || !GEN[mood]) {
-      const mine = [...S.lib.saved].filter((id) => track(id));
+      const mine = [...new Set([...S.lib.saved, ...TRACKS.filter((t) => !t.ext).map((t) => t.id)])].filter((id) => track(id));
       let charts = [];
       if (YtApi.enabled()) {
         for (const region of ["RU", "US"]) { try { charts = charts.concat(regYt(await YtApi.chart(region))); } catch (e) { /* пропускаем */ } }
@@ -3571,8 +3576,7 @@ const Wave = (() => {
     const W = S.wave, on = W.on;
     return `<section class="wavecard ${on ? "on" : ""}" id="wavecard"><div class="wc-bars">${Array.from({ length: 28 }, (_, i) => `<i style="animation-delay:-${((i * 37) % 16) / 10}s"></i>`).join("")}</div>
       <div class="wc-t"><h3>Моя волна</h3><p>${on ? "Играет сейчас. Нажми, чтобы остановить." : "Бесконечная музыка под настроение."}</p></div>
-      <button class="wc-go" data-wave="${on ? "stop" : "start"}" aria-label="${on ? "Остановить волну" : "Включить волну"}">${on ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>' : '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.8l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>'}</button></section>
-      <div class="moods">${MOODS.map(([k, l]) => `<button class="mood ${W.mood === k ? "on" : ""}" data-wmood="${k}">${l}</button>`).join("")}</div>`;
+      <button class="wc-go" data-wave="${on ? "stop" : "start"}" aria-label="${on ? "Остановить волну" : "Включить волну"}">${on ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>' : '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.8l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>'}</button><div class="moods">${MOODS.map(([k, l]) => `<button class="mood ${W.mood === k ? "on" : ""}" data-wmood="${k}">${l}</button>`).join("")}</div></section>`;
   }
 
   function paint() {
@@ -3580,9 +3584,8 @@ const Wave = (() => {
     if (!el) return;
     const box = el.parentNode, tmp = document.createElement("div");
     tmp.innerHTML = html();
-    const old = [el, el.nextElementSibling];
     [...tmp.children].forEach((n) => box.insertBefore(n, el));
-    old.forEach((n) => n && n.remove());
+    el.remove();
   }
 
   document.addEventListener("click", (e) => {
@@ -3775,7 +3778,7 @@ document.addEventListener("click", (e) => {
 // ============================================================
 const freshLib = () => ({ loaded: false, err: "", playlists: [], saved: new Set(), savedMoments: [], posts: null, open: null });
 S.lib = freshLib();
-S.tt = "songs"; // вкладка в «Треки»: songs / catalog / lib
+S.tt = "catalog"; // вкладка в «Треки»: songs / catalog / lib
 
 // Какие песни можно выбрать для поста: свои, загруженные, сохранённые
 function pickable(keep) {

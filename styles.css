@@ -721,3 +721,141 @@ body.lyr-full #ytbox { display: none !important; }
 .lyr-box p.on .w { color: var(--mu); }
 .lyr-box p.on .w.lit { color: var(--tx); text-shadow: 0 0 22px color-mix(in srgb, var(--aura1) 70%, transparent); }
 .lyr-box p.past .w { color: inherit; }
+
+/* =====================================================================
+   Riff · спокойный дизайн (v18): один цвет акцента, чистые карточки,
+   минимум градиентов и свечения
+   ===================================================================== */
+:root, [data-theme="dark"] {
+  --bg: #0e0d13; --card: #17161e; --card2: #211f29; --line: #2b2933;
+  --tx: #f3f2f7; --mu: #9d9aad; --wave: #38354a; --ink: #0e0d13;
+  --a: #8b7bff; --at: #b3a8ff;
+}
+[data-theme="light"] {
+  --bg: #f6f5f9; --card: #ffffff; --card2: #efedf4; --line: #e4e1ec;
+  --tx: #17151f; --mu: #66627a; --wave: #d9d5e6; --ink: #17151f;
+  --a: #6a4cf0; --at: #5a3fdc;
+}
+:root { --glass: var(--card); --edge: var(--line); --r: 20px; }
+
+/* Фон: почти ровный, лёгкий оттенок цвета играющей песни */
+.blobs i:nth-child(2), .blobs::after { display: none; }
+.blobs i:nth-child(1) { opacity: 0.12; animation: none; width: 90vmax; height: 90vmax; top: -62vmax; left: 5vmax; filter: blur(110px); }
+body.aura-on .blobs i:nth-child(1), body.is-playing .blobs i:nth-child(1) { opacity: 0.2; }
+[data-theme="light"] .blobs i:nth-child(1) { opacity: 0.14; }
+
+/* Заголовки */
+.h1 { background: none; color: var(--tx); -webkit-text-fill-color: currentColor; font-size: 28px; font-weight: 600; letter-spacing: -0.025em; }
+.sec { font-size: 15px; margin: 12px 0 -2px; }
+.top p, .hello { font-size: 14px; }
+
+/* Карточки: плотные, без стекла и теней */
+.card, .search, .segs, .chip, .mood, .theme, .close, .empty { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: none; }
+[data-theme="light"] .card { box-shadow: 0 1px 2px rgba(23, 21, 31, 0.04); }
+.empty { background: transparent; border: 1px dashed var(--line); border-radius: var(--r); }
+.search { background: var(--card); border: 1px solid var(--line); height: 48px; border-radius: 16px; }
+.search:focus-within { border-color: var(--a); }
+.field input, .field textarea, .cap-in { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; }
+.field input:focus, .field textarea:focus, .cap-in:focus { border-color: var(--a); outline: none; }
+
+/* Кнопки и выбор: один сплошной цвет */
+.logo { background: var(--a); box-shadow: none; }
+.btn-a, .send, .playbtn, .tab.on, .nav button.on, .chip.on { background: var(--a); color: #fff; box-shadow: none; }
+.btn-a { font-weight: 700; height: 48px; border-radius: 24px; }
+.btn-a:active, .send:active, .playbtn:active { filter: brightness(0.92); }
+.tab.on { box-shadow: none; }
+.chip.on { border-color: transparent; }
+.chip, .mood { background: var(--card); border: 1px solid var(--line); font-weight: 700; }
+.mood.on { background: var(--tx); color: var(--bg); border-color: transparent; }
+.segs { background: var(--card); border: 1px solid var(--line); border-radius: 16px; }
+.tab { border-radius: 12px; }
+.bubble.me { background: var(--a); }
+.pbar span { background: var(--a); }
+.streak { background: var(--hot); box-shadow: none; }
+.theme { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+.theme:hover { background: var(--card2); }
+
+/* Главная карточка ленты: тихая, без цветной заливки */
+.hero { background: var(--card); color: var(--tx); border: 1px solid var(--line); border-radius: 24px; padding: 22px; gap: 14px; }
+.hero::after { display: none; }
+.hero h2, .hero b { color: var(--tx); }
+.hero p { color: var(--mu); }
+.hero .btn-a { align-self: flex-start; background: var(--hot); color: #11110a; }
+
+/* Кнопка «момент» под песней: цвет песни, но однотонный */
+.mbtn { background: color-mix(in srgb, var(--c1, var(--a)) 82%, #000); box-shadow: none; }
+.mbtn .mplay, .mbtn .pl { background: rgba(255, 255, 255, 0.22); }
+
+/* Волна: тонкая строка, а не огромный баннер */
+.wavecard { background: var(--card); color: var(--tx); border: 1px solid var(--line); box-shadow: none; padding: 12px 14px 12px 18px; border-radius: 20px; }
+.wavecard h3 { font-size: 16px; }
+.wavecard p { font-size: 12.5px; opacity: 1; color: var(--mu); font-weight: 600; }
+.wavecard .wc-go { width: 44px; height: 44px; background: var(--a); color: #fff; box-shadow: none; }
+.wavecard .wc-bars { height: 100%; opacity: 0.09; }
+.wavecard .wc-bars i { background: var(--a); }
+.moods { margin-top: -6px; }
+.mood { height: 32px; font-size: 12.5px; }
+
+/* Меню */
+.side { background: transparent; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media (min-width: 801px) {
+  .side { padding: 0; border-radius: 0; }
+  .nav button { border-radius: 14px; font-weight: 700; }
+  .nav button.on { background: var(--card2); color: var(--tx); box-shadow: none; }
+  .nav button.on svg { color: var(--a); }
+  .nav .orb .orb-b { background: var(--a); }
+}
+@media (max-width: 800px) {
+  .nav { background: var(--card); border: 1px solid var(--line); backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 26px; box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.45); padding: 5px; }
+  .nav button { min-height: 54px; font-weight: 700; }
+  .nav button.on { background: none; color: var(--tx); }
+  .nav button.on svg { background: color-mix(in srgb, var(--a) 22%, transparent); color: var(--at); box-shadow: none; transform: none; }
+  .nav .orb .orb-b { background: var(--a); box-shadow: 0 0 0 5px var(--bg); }
+  .player { background: var(--card2); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5); border: 1px solid var(--line); }
+}
+.orb-b { background: var(--a); }
+.player { background: var(--card2); backdrop-filter: none; -webkit-backdrop-filter: none; border: 1px solid var(--line); box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.5); }
+
+/* Большой плеер: ровный фон с лёгким оттенком обложки */
+.sheet { background: color-mix(in srgb, var(--aura1) 9%, var(--bg)); }
+.sheet::before { display: none; }
+.sheet-in::before { display: none; }
+.art { border-radius: 28px; box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.7); }
+body.is-playing .sheet .art { animation: none; }
+.lyr.full::before { background: color-mix(in srgb, var(--aura1) 14%, var(--bg)); }
+.lyr.full { background: color-mix(in srgb, var(--aura1) 14%, var(--bg)); }
+.lyr-box p.on .w.lit { text-shadow: none; }
+
+/* Значки и мелочи */
+.srcb { color: var(--mu); border-color: var(--line); font-weight: 700; }
+.sticker { font-weight: 700; }
+.react.on { background: color-mix(in srgb, var(--a) 18%, transparent); }
+.avatar { box-shadow: none; }
+#meBtn.on, #setBtn.on { border-color: var(--a); box-shadow: none; }
+#view.enter > * { animation-duration: 0.35s; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.hero { box-shadow: none; }
+.hero h2 { font-size: 24px; }
+.hero p { opacity: 1; font-weight: 600; }
+.hero .btn-dark { align-self: flex-start; background: var(--hot); color: #11110a; font-weight: 800; box-shadow: none; }
+@media (min-width: 801px) { .themebox { flex-wrap: nowrap; } .themebox #theme { flex: 1; font-size: 0; gap: 0; padding: 0; } }
+
+/* Волна внутри каталога: одна аккуратная карточка с настроениями */
+.wavecard { flex-wrap: wrap; row-gap: 10px; padding: 14px 14px 12px 18px; }
+.wavecard .moods { flex: 1 0 100%; margin: 0; padding: 0; position: relative; z-index: 1; }
+.wavecard .mood { background: var(--card2); border-color: transparent; }
+.wavecard .mood.on { background: var(--tx); color: var(--bg); }
+.chips.modes { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -16px; padding-right: 16px; }
+.chips.modes::-webkit-scrollbar { display: none; }
+.chips.modes .chip { flex: none; }
+#cmeta { display: flex; flex-direction: column; gap: 12px; }
+#cmeta:empty { display: none; }
+#cres { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+#cres > .card { margin: 0; }
+.btn-a.sm { height: 40px; padding: 0 16px; font-size: 14px; }
+.wavecard .wc-bars { display: none; }
+.wavecard.on .wc-bars { display: flex; opacity: 0.1; }
+.btn-s { border: 1px solid var(--line); background: var(--card); color: var(--tx); font-weight: 700; box-shadow: none; }
+.btn-s:hover { background: var(--card2); }
+.btn-dark { box-shadow: none; }
