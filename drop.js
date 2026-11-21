@@ -153,7 +153,7 @@ const BANNERS = [
   ["#ff5ca8", "#ffb84d"], ["#2a6bff", "#7c5cff"], ["#232046", "#7c5cff"], ["#ff6b4a", "#ff2d6f"],
 ];
 const ACCENTS = ["#8b6cff", "#ff5ca8", "#19d3a2", "#ffb84d", "#2a6bff", "#ff6b4a", "#c6f432", "#ffffff"];
-const bannerBg = (i) => { const b = BANNERS[i] || BANNERS[0]; return `linear-gradient(135deg, ${b[0]}, ${b[1]})`; };
+const bannerBg = (i) => { const b = BANNERS[i] || BANNERS[0]; return `linear-gradient(160deg, ${b[0]}, color-mix(in srgb, ${b[0]} 65%, ${b[1]}))`; };
 const accentOf = (i) => ACCENTS[i] || ACCENTS[0];
 
 const nowHtml = (p) => (nowText(p) ? `${ico("headphones", 14)} ${esc(nowText(p))}` : "");
@@ -975,6 +975,7 @@ function viewProfile() {
       ${profileActions(p, mineP)}
     </div></section>
   ${artistBlock(p)}
+  ${mineP ? Stats.html() : ""}
   ${listsBlock(p, d)}
   <h3 class="sec">Посты</h3>${p.posts_policy === "friends" && !mineP && !Friends.isFriend(p.id) ? `<div class="empty">${ico("lock", 28)}<br>Посты видят только друзья.</div>` : d.posts.length ? d.posts.map(postCard).join("") : `<div class="empty">Пока ничего не опубликовано.</div>`}`;
 }
@@ -1980,10 +1981,19 @@ const listsLocked = (p) => {
   return p.id !== me() && (pol === "none" || (pol === "friends" && !Friends.isFriend(p.id)));
 };
 
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+}
+
 function profStats(p, posts, d) {
   const mine = TRACKS.filter((t) => t.user_id === p.id), plays = mine.reduce((s, t) => s + playsOf(t), 0);
   const open = d && !listsLocked(p);
-  return `<div class="stats"><span><b>${mine.length}</b> песен</span><span><b>${posts.length}</b> постов</span>${plays ? `<span><b>${fmtN(plays)}</b> прослушиваний</span>` : ""}${open && d.friends ? `<span><b>${d.friends.length}</b> друзей</span>` : ""}${open && d.rooms ? `<span><b>${d.rooms.length}</b> сообществ</span>` : ""}</div>`;
+  const cells = [[mine.length, plural(mine.length, "песня", "песни", "песен")], [posts.length, plural(posts.length, "пост", "поста", "постов")]];
+  if (plays) cells.push([fmtN(plays), "прослушиваний"]);
+  if (open && d.friends) cells.push([d.friends.length, plural(d.friends.length, "друг", "друга", "друзей")]);
+  if (open && d.rooms) cells.push([d.rooms.length, plural(d.rooms.length, "сообщество", "сообщества", "сообществ")]);
+  return `<div class="stats">${cells.map(([n, l]) => `<div><b>${n}</b><span>${l}</span></div>`).join("")}</div>`;
 }
 
 // Друзья и сообщества в профиле (если человек их не скрыл)
@@ -3572,11 +3582,15 @@ const Wave = (() => {
     if (i >= 0 && S.queue.length - i <= 4) more(16);
   }
 
+  const MIX = { any: ["Моя волна", "Всё лучшее для тебя"], calm: ["Спокойный", "Lo-fi и эмбиент"], energy: ["Заряд", "Электроника и хип-хоп"], night: ["Ночной", "Джаз и ритм-н-блюз"] };
   function html() {
-    const W = S.wave, on = W.on;
-    return `<section class="wavecard ${on ? "on" : ""}" id="wavecard"><div class="wc-bars">${Array.from({ length: 28 }, (_, i) => `<i style="animation-delay:-${((i * 37) % 16) / 10}s"></i>`).join("")}</div>
-      <div class="wc-t"><h3>Моя волна</h3><p>${on ? "Играет сейчас. Нажми, чтобы остановить." : "Бесконечная музыка под настроение."}</p></div>
-      <button class="wc-go" data-wave="${on ? "stop" : "start"}" aria-label="${on ? "Остановить волну" : "Включить волну"}">${on ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>' : '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.8l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>'}</button><div class="moods">${MOODS.map(([k, l]) => `<button class="mood ${W.mood === k ? "on" : ""}" data-wmood="${k}">${l}</button>`).join("")}</div></section>`;
+    const W = S.wave;
+    return `<div class="mixes" id="wavecard">${MOODS.map(([k]) => {
+      const on = W.on && W.mood === k;
+      return `<button class="mix mix-${k} ${on ? "on" : ""}" data-wmix="${k}" aria-label="${MIX[k][0]}: ${on ? "остановить" : "включить"}">
+        <span class="mix-ic">${on ? '<i></i><i></i><i></i><i></i>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.8l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>'}</span>
+        <b>${MIX[k][0]}</b><span>${on ? "Играет" : MIX[k][1]}</span></button>`;
+    }).join("")}</div>`;
   }
 
   function paint() {
@@ -3589,9 +3603,13 @@ const Wave = (() => {
   }
 
   document.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-wave],[data-wmood]");
+    const b = e.target.closest("[data-wave],[data-wmix]");
     if (!b) return;
-    if (b.dataset.wmood) { S.wave.mood = b.dataset.wmood; if (S.wave.on) start(); else paint(); return; }
+    if (b.dataset.wmix) {
+      const k = b.dataset.wmix;
+      if (S.wave.on && S.wave.mood === k) { stop(); au.pause(); return; }
+      S.wave.mood = k; start(); return;
+    }
     if (b.dataset.wave === "stop") { stop(); au.pause(); } else start();
   });
   au.addEventListener("play", () => setTimeout(check, 300));
@@ -3677,6 +3695,56 @@ const Flair = (() => {
   pl.addEventListener("click", (e) => { if (Date.now() - swiped < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
 
   return { hello, navHtml, after, streak: () => st.n };
+})();
+
+// ============================================================
+// «Мой слух»: сколько и кого ты слушал за неделю. Хранится только на этом устройстве.
+// ============================================================
+const Stats = (() => {
+  const KEY = "riff-listen";
+  let log = {};
+  try { log = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { log = {}; }
+  const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  const STEP = 5;
+  let dirty = false;
+
+  setInterval(() => {
+    if (!(S.playing && S.nowId)) return;
+    const t = track(S.nowId);
+    if (!t) return;
+    const k = dayKey(new Date()), who = (t.artist || "Без исполнителя").slice(0, 40), d = (log[k] = log[k] || {});
+    d[who] = (d[who] || 0) + STEP; dirty = true;
+  }, STEP * 1000);
+  setInterval(() => {
+    if (!dirty) return;
+    dirty = false;
+    const keep = Object.keys(log).sort().slice(-30), out = {};
+    keep.forEach((k) => (out[k] = log[k])); log = out;
+    try { localStorage.setItem(KEY, JSON.stringify(log)); } catch (e) { /* без памяти */ }
+  }, 15000);
+
+  function week() {
+    const tot = {}; let sec = 0, daysOn = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = log[dayKey(new Date(Date.now() - i * 864e5))];
+      if (!d) continue;
+      daysOn++;
+      Object.entries(d).forEach(([a, s]) => { tot[a] = (tot[a] || 0) + s; sec += s; });
+    }
+    return { sec, daysOn, top: Object.entries(tot).sort((a, b) => b[1] - a[1]).slice(0, 3) };
+  }
+  const fmt = (s) => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${m} мин`; };
+
+  function html() {
+    const w = week();
+    if (w.sec < 60) return `<section class="card ear"><div class="ear-h"><b>Мой слух</b><span class="muted small">за неделю</span></div><p class="muted small">Включи музыку, и здесь появится твоя статистика: сколько слушал и кто твои любимые исполнители. Хранится только на этом устройстве.</p></section>`;
+    const max = w.top[0][1];
+    return `<section class="card ear"><div class="ear-h"><b>Мой слух</b><span class="muted small">за неделю</span></div>
+      <div class="ear-big"><b>${fmt(w.sec)}</b><span class="muted">${w.daysOn} из 7 дней с музыкой · серия ${Flair.streak()}</span></div>
+      <div class="ear-top">${w.top.map(([a, s]) => `<div class="ear-row"><span class="ell">${esc(a)}</span><i style="--w:${Math.max(8, Math.round((s / max) * 100))}%"></i><span class="muted small">${fmt(s)}</span></div>`).join("")}</div></section>`;
+  }
+  const reload = () => { try { log = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { log = {}; } };
+  return { html, week, reload };
 })();
 
 /* ===== artist.js ===== */
